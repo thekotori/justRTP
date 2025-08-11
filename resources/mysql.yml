@@ -1,0 +1,44 @@
+# ----------------------------------------------------------------
+# JustRTP MySQL Configuration
+# ----------------------------------------------------------------
+# This file is REQUIRED for the cross-server teleport features to work.
+# It allows different servers in your BungeeCord/Velocity network to communicate.
+# This file must be configured identically on ALL Spigot/Paper servers where JustRTP is installed.
+# ----------------------------------------------------------------
+# CONFIG VERSION - DO NOT CHANGE THIS
+config-version: 2
+# ----------------------------------------------------------------
+
+# Set to true to enable MySQL integration for proxy features.
+# If this is false, all cross-server /rtp commands will be disabled, even if proxy is enabled in config.yml.
+enabled: false
+
+# Your MySQL database host address. Use '127.0.0.1' for localhost.
+host: 'localhost'
+
+# The port your MySQL server is running on. Default is 3306.
+port: 3306
+
+# The name of the database JustRTP should use. This database must exist.
+database: 'justrtp'
+
+# The username for connecting to the database.
+username: 'root'
+
+# The password for the specified user.
+password: 'password'
+
+# --- Connection Pool Settings ---
+# These settings control how the plugin manages its connections to the database.
+# For most users, the default settings are fine.
+pool-settings:
+  # The maximum number of simultaneous connections to the database.
+  maximum-pool-size: 10
+  # The minimum number of idle connections to keep ready.
+  minimum-idle: 10
+  # How long (in milliseconds) to wait for a connection before timing out.
+  connection-timeout: 30000
+  # How long (in milliseconds) a connection can be idle before being closed.
+  idle-timeout: 600000
+  # The maximum lifetime of a connection in the pool (in milliseconds).
+  max-lifetime: 1800000

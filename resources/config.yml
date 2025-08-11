@@ -1,0 +1,370 @@
+# ----------------------------------------------------------------
+# JustRTP Main Configuration
+# ----------------------------------------------------------------
+# CONFIG VERSION - DO NOT CHANGE THIS
+config-version: 15
+# ----------------------------------------------------------------
+
+settings:
+  # The time in seconds a player must wait before using /rtp again.
+  # This can be bypassed with the permission: justrtp.cooldown.bypass
+  cooldown: 30
+
+  # The time in seconds a player must stand still before being teleported.
+  # This can be bypassed with the permission: justrtp.delay.bypass
+  delay: 3
+
+  # The maximum number of times the plugin will try to find a safe location if the cache is empty.
+  # Higher values may increase the chance of finding a location but can use more server resources.
+  attempts: 25
+
+  # Should the plugin check for region claims from other plugins (e.g., WorldGuard)?
+  # If true, players will not be teleported into claimed areas.
+  # Requires the respective plugin (e.g., WorldGuard) to be installed.
+  respect_regions: true
+
+  # Enable debug mode to print detailed information to the console.
+  # This is useful for troubleshooting but can be very spammy.
+  debug: false
+
+  # Should the /rtp credits command require the "justrtp.command.credits" permission?
+  # If false, anyone can use the command.
+  credits_command_requires_permission: true
+
+# --- bStats Metrics ---
+# bStats collects some anonymous data for plugin authors like server version, number of players, etc.
+# To see what data is collected, go to https://bstats.org/what-is-collected/
+# You can disable this here if you wish.
+bstats:
+  enabled: true
+
+# --- World & Biome Teleport Control ---
+rtp_settings:
+  # This section controls which worlds players can teleport INTO.
+  worlds:
+    # Set the operation mode.
+    # "BLACKLIST": Players can RTP into ALL worlds EXCEPT the ones listed below.
+    # "WHITELIST": Players can ONLY RTP into the worlds listed below.
+    mode: "BLACKLIST"
+
+    # The list of worlds for the selected mode.
+    list:
+      - "example_world"
+      - "example_world1"
+
+  # This section controls which biomes players can land in.
+  # A full list of valid biomes can be found here: https://hub.spigotmc.org/javadocs/spigot/org/bukkit/block/Biome.html
+  biomes:
+    # Set the operation mode.
+    # "BLACKLIST": Players can land in ALL biomes EXCEPT the ones listed below.
+    # "WHITELIST": Players can ONLY land in the biomes listed below.
+    mode: "BLACKLIST"
+
+    # The list of biomes for the selected mode. By default, players won't land in oceans.
+    list:
+      - "OCEAN"
+      - "DEEP_OCEAN"
+      - "COLD_OCEAN"
+      - "DEEP_COLD_OCEAN"
+      - "LUKEWARM_OCEAN"
+      - "DEEP_LUKEWARM_OCEAN"
+      - "WARM_OCEAN"
+      - "FROZEN_OCEAN"
+      - "DEEP_FROZEN_OCEAN"
+
+  # --- World Aliases ---
+  # Define custom, shorter names for your worlds for use in commands.
+  # Players can then use "/rtp <alias>" instead of the full world name.
+  # Format: Alias: "RealWorldName"
+  # Note: Aliases are case-insensitive.
+  world_aliases:
+    "End": "world_the_end"
+    "Mining": "world_resource"
+
+# --- Location Caching System ---
+# This system dramatically improves performance by finding safe locations in advance.
+# When a player uses /rtp, they get a pre-calculated location instantly. Highly recommended.
+location_cache:
+  # Enable the cache for instant teleports.
+  enabled: true
+
+  # How many safe locations should the plugin find and keep ready for each world?
+  cache_size: 20
+
+  # How often (in seconds) should the plugin check if the cache needs refilling?
+  refill_interval_seconds: 5
+
+  # --- Whitelist of Worlds to Cache ---
+  # Only worlds listed here will have a location cache.
+  # The names MUST EXACTLY match your world folder names.
+  #
+  # For each world, you can specify if chunk generation is allowed.
+  #   generate_chunks: true  -> Recommended for large, explorable worlds (world, resources).
+  #   generate_chunks: false -> CRITICAL for small, pre-generated worlds (arenas, minigames, spawn).
+  worlds:
+    world:
+      generate_chunks: true
+    world_nether:
+      generate_chunks: true
+    # pvp_arena:
+    #   generate_chunks: false
+
+# --- Animation Settings ---
+# Choose which animations from animations.yml to play.
+# Set to "" (an empty string) to disable an animation.
+animations:
+  # The animation that loops while the player is waiting for the teleport delay.
+  delay_animation: "swirling_vortex"
+  # The animation that plays once the player has successfully arrived at their destination.
+  success_animation: "nova_burst"
+
+# --- Teleport Delay Settings ---
+# Configure what cancels the teleport during the warmup period.
+delay_settings:
+  # Cancel the teleport if the player moves from their starting block.
+  # This includes any movement, not just changing blocks.
+  cancel_on_move: true
+  # Cancel the teleport if the player takes or deals damage.
+  cancel_on_combat: true
+
+# --- RTP Zone Teleport Settings ---
+# Configure how players are spread out when teleported from an RTP Zone.
+zone_teleport_settings:
+  # The minimum distance (in blocks) a player can be teleported from the group's center point.
+  min_spread_distance: 5
+  # The maximum distance (in blocks) a player can be teleported from the group's center point.
+  max_spread_distance: 15
+
+# --- First Join Teleport ---
+# Automatically teleport a player the very first time they join the server.
+first_join_rtp:
+  enabled: false
+  # The name of the world where the new player should be teleported.
+  target_world: "world"
+
+# --- Respawn Teleport ---
+# Automatically teleport a player when they respawn after death.
+respawn_rtp:
+  enabled: false
+  # A list of worlds where players should be randomly teleported on respawn.
+  # An empty list [] means it's enabled in ALL worlds.
+  worlds:
+    - "world"
+    - "world_nether"
+
+# --- Economy Settings (Requires Vault) ---
+economy:
+  # Enable charging players for using /rtp.
+  enabled: false
+  # The default cost for a random teleport. This can be overridden per-world or per-permission group.
+  # Players with "justrtp.cost.bypass" are not charged.
+  cost: 100.0
+  # If true, players must type /rtp confirm before a costly teleport will proceed.
+  require_confirmation: true
+
+# --- Performance Settings ---
+# Configure teleport processing to prevent lag on busy servers.
+performance:
+  # If true, teleport requests are added to a queue and processed sequentially.
+  # This prevents server lag when many players use /rtp at the same time. Highly recommended.
+  # If false, teleports are processed instantly and concurrently (can cause lag spikes).
+  use_teleport_queue: true
+
+  # How often (per second) the queue should be processed.
+  # A higher number processes faster but may use more resources.
+  # This only works if use_teleport_queue is true.
+  queue_processing_rate: 5
+
+  # How many players to teleport at once from the queue each time it is processed.
+  # Increasing this can significantly speed up teleports on busy servers.
+  queue_batch_size: 5
+
+# --- Proxy & Cross-Server Settings ---
+# For this to work, you need a Velocity/BungeeCord proxy and a shared MySQL database.
+proxy:
+  # Set to true to enable cross-server /rtp functionality (e.g., /rtp world).
+  # This requires a correctly configured mysql.yml on ALL Spigot/Paper servers.
+  enabled: false
+
+  # The name of THIS server as defined in your proxy's configuration (e.g., velocity.toml).
+  # THIS MUST BE SET ACCURATELY FOR PROXY FEATURES TO WORK. It is case-sensitive.
+  this_server_name: "lobby"
+
+  # If a player uses /rtp <server>, they are first sent to that server and then teleported.
+  # If this is true, the teleport delay (warmup) will be skipped for players arriving from another server.
+  cross_server_rtp_no_delay: true
+
+  # A list of ALL servers that players can RTP to from this server.
+  # These names must exactly match the server names in your proxy's configuration.
+  servers:
+    - "world"
+    - "factions"
+
+  # Define user-friendly display names for your servers.
+  # If a server name is not listed here, its technical name will be used.
+  aliases:
+    "world": "world"
+    "factions": "<gradient:red:gold>Factions</gradient>"
+
+# --- Visual & Audio Effects ---
+# Customize titles, sounds, particles, and more after a successful teleport.
+# All text fields use the MiniMessage format. Learn more: https://docs.advntr.dev/minimessage/format.html
+# To disable a specific message (e.g., title), set its text to " ".
+effects:
+  title:
+    enabled: true
+    fade_in: 10
+    stay: 40
+    fade_out: 10
+    main_title: "<gradient:#20B2AA:#7FFFD4>Teleported!</gradient>"
+    subtitle: "<gray>You have arrived at a new location.</gray>"
+
+  action_bar:
+    enabled: true
+    text: "<green>You have been randomly teleported!</green>"
+
+  # This action bar is shown with a timer when a player is waiting for a cross-server RTP.
+  queue_action_bar:
+    enabled: true
+    # Placeholders: <server> (target server name), <time> (seconds in queue)
+    text: "<gray>Searching on <gradient:#20B2AA:#7FFFD4><server></gradient>... <dark_gray>| <gray>Time: <white><time>s</white>"
+
+  # This action bar is shown when a player's local RTP request is queued.
+  in_queue_action_bar:
+    enabled: true
+    text: "<gray>You are in the queue... Teleporting soon!</gray>"
+
+  boss_bar:
+    enabled: true
+    text: "<gradient:#20B2AA:#7FFFD4>JustRTP</gradient> <white>» <gray>Finding a new adventure!</gray>"
+    color: GREEN # Available: PINK, BLUE, RED, GREEN, YELLOW, PURPLE, WHITE
+    style: PROGRESS # Available: PROGRESS, NOTCHED_6, NOTCHED_10, NOTCHED_12, NOTCHED_20
+    duration: 5 # Duration in seconds
+
+  # Chat messages sent to the player on successful teleport.
+  # Placeholders: <player>, <x>, <y>, <z>, <world>
+  chat_message:
+    enabled: true
+    messages:
+      - ""
+      - "<dark_gray>» <gradient:#20B2AA:#7FFFD4>Wilderness Teleport</gradient>"
+      - "<dark_gray>  ▪ <gray>World:</gray> <color:#7FFFD4><world>"
+      - "<dark_gray>  ▪ <gray>Coordinates:</gray> <color:#7FFFD4><x><gray>, </gray><color:#7FFFD4><y><gray>, </gray><color:#7FFFD4><z>"
+      - ""
+
+  sound:
+    enabled: true
+    # Full list of sounds: https://hub.spigotmc.org/javadocs/spigot/org/bukkit/Sound.html
+    name: ENTITY_PLAYER_LEVELUP
+    volume: 1.0
+    pitch: 1.2
+
+  transition_effects:
+    enabled: true
+    # Effects to apply during the teleport delay. Format: "EFFECT_NAME:AMPLIFIER"
+    # Amplifier is 0-indexed (e.g., 0 for level I, 1 for level II).
+    effects:
+      - "BLINDNESS:0"
+      - "SLOW:2"
+
+# --- Global RTP Zone Effects ---
+# Configure the default effects for entering and leaving ALL RTP zones.
+# These can be overridden per-zone in rtp_zones.yml.
+zone_effects:
+  on_enter:
+    title:
+      enabled: true
+      fade_in: 5
+      stay: 40
+      fade_out: 10
+      main_title: "<green>You have entered the queue!"
+      subtitle: "<gray>The battle will begin soon."
+    sound:
+      enabled: true
+      name: "BLOCK_NOTE_BLOCK_PLING"
+      volume: 1.0
+      pitch: 1.5
+  on_leave:
+    title:
+      enabled: true
+      fade_in: 5
+      stay: 20
+      fade_out: 5
+      main_title: "<red>You have left the queue!"
+      subtitle: ""
+    sound:
+      enabled: true
+      name: "BLOCK_NOTE_BLOCK_PLING"
+      volume: 1.0
+      pitch: 0.8
+
+# --- Command Disabling ---
+# Worlds where the /rtp command is COMPLETELY disabled and cannot be executed AT ALL.
+disabled_worlds:
+  - "world_prison"
+  - "spawn"
+
+# A list of blocks that are considered unsafe to teleport ONTO.
+blacklist_blocks:
+  - "LAVA"
+  - "WATER"
+  - "CACTUS"
+  - "FIRE"
+  - "MAGMA_BLOCK"
+  - "AIR"
+  - "CAVE_AIR"
+
+# Define how the safety check behaves in different environments.
+# NORMAL: Uses getHighestBlockAt, suitable for Overworld-like worlds.
+# NETHER: Scans downwards to find caves, suitable for Nether worlds.
+# THE_END: Scans downwards to find islands, avoiding the void. Ideal for The End.
+world_types:
+  world: NORMAL
+  world_nether: NETHER
+  world_the_end: THE_END
+
+# Define custom teleport boundaries for specific worlds.
+# IMPORTANT: max_radius should ALWAYS be smaller than half of your world border size.
+# Check your world border with /worldborder get
+custom_worlds:
+  world:
+    # Example: If your overworld border is 10,000 x 10,000, the max radius is 5000.
+    max_radius: 5000
+    min_radius: 100
+    center_x: 0
+    center_z: 0
+    cost: 100.0
+  world_nether:
+    # The Nether coordinates are 1/8th of the overworld. A 5000 overworld radius is ~625 in the Nether.
+    # If your nether border is 1,250 x 1,250, the max radius is 625.
+    max_radius: 625
+    min_radius: 50
+    center_x: 0
+    center_z: 0
+  world_the_end:
+    # The End often has a smaller explorable area. Adjust as needed.
+    max_radius: 2000
+    min_radius: 500
+    center_x: 0
+    center_z: 0
+
+# Define special settings for players with specific permissions (e.g., for VIP ranks).
+permission_groups:
+  enabled: true
+  groups:
+    vip:
+      priority: 10
+      worlds:
+        world:
+          cooldown: 15
+          delay: 1
+          cost: 0.0
+    mvp:
+      priority: 20
+      worlds:
+        world:
+          cooldown: 0
+          delay: 0
+          max_radius: 7500
+          min_radius: 500
+          cost: 0.0

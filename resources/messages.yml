@@ -1,0 +1,92 @@
+# ----------------------------------------------------------------
+# JustRTP Message Configuration
+# ----------------------------------------------------------------
+# CONFIG VERSION - DO NOT CHANGE THIS
+config-version: 8
+# ----------------------------------------------------------------
+
+prefix: "<gray>[<gradient:#20B2AA:#7FFFD4>JustRTP</gradient>]</gray>"
+
+command:
+  reload: "%prefix% <green>Configuration and messages have been reloaded.</green>"
+  usage: "%prefix% <red>Invalid Usage. Use: /rtp [player/world/server] [args...]</red>"
+  no_permission: "%prefix% <red>You do not have permission to perform this command.</red>"
+  player_only: "%prefix% <red>This command can only be executed by a player.</red>"
+  player_not_found: "%prefix% <red>Player '<player>' could not be found.</red>"
+  world_not_found: "%prefix% <red>World '<world>' does not exist or is not loaded.</red>"
+  world_disabled: "%prefix% <red>Random teleport is disabled in the world '<world>'.</red>"
+  command_disabled_in_world: "%prefix% <red>You cannot use this command in your current world.</red>"
+  invalid_radius: "%prefix% <red>The radius must be a positive number.</red>"
+
+proxy:
+  connecting: "%prefix% <gray>Connecting you to the server <server>...</gray>"
+  searching: "%prefix% <gray>Searching for a safe location on <server>... Please wait.</gray>"
+  server_not_found: "%prefix% <red>Server '<server>' is not a valid destination.</red>"
+  disabled: "%prefix% <red>Cross-server teleportation is currently disabled.</red>"
+  no_location_found_on_server: "%prefix% <red>Could not find a safe location on server '<server>'.</red>"
+  cooldown_reset_on_fail: "%prefix% <green>Your teleport cooldown has been reset.</green>"
+
+teleport:
+  delay: "%prefix% <gray>Teleporting in <time> seconds... Don't move!</gray>"
+  cancelled: "%prefix% <red>Teleport cancelled.</red>"
+  cooldown: "%prefix% <red>You must wait <time> seconds before teleporting again.</red>"
+  queued: "%prefix% <gray>Your teleport request has been queued... Please wait.</gray>"
+  start_self: "%prefix% <gray>Searching for a safe location for you...</gray>"
+  start_other: "%prefix% <gray>Searching for a safe location for <player>...</gray>"
+  success_other: "%prefix% <green><player> has been teleported to a random location!</green>"
+  no_location_found: "%prefix% <red>Could not find a safe location after many attempts. Please try again.</red>"
+  error: "%prefix% <red>An internal error occurred. Please contact an administrator.</red>"
+
+economy:
+  not_enough_money: "%prefix% <red>You cannot afford to teleport. It costs <cost>.</red>"
+  payment_success: "%prefix% <green>You have been charged <cost> for the teleport.</green>"
+  needs_confirmation: "%prefix% <yellow>This teleport will cost <gold><cost></gold>. Type <green>/rtp confirm</green> or click <green><click:run_command:/rtp confirm><b>[HERE]</b></click></green> to continue."
+  confirmed: "%prefix% <green>Teleport confirmed.</green>"
+  no_confirmation_pending: "%prefix% <red>You have no pending teleport to confirm.</red>"
+
+zone:
+  command:
+    usage: "%prefix% <red>Usage: /rtpzone <setup|delete|list|cancel|sethologram|delhologram|ignore></red>"
+    setup_usage: "%prefix% <red>Usage: /rtpzone setup <zone_id></red>"
+    delete_usage: "%prefix% <red>Usage: /rtpzone delete <zone_id></red>"
+    sethologram_usage: "%prefix% <red>Usage: /rtpzone sethologram <zone_id> [y_offset]</red>"
+    delhologram_usage: "%prefix% <red>Usage: /rtpzone delhologram <zone_id></red>"
+    delete_success: "%prefix% <green>Successfully deleted RTP Zone '<id>'.</green>"
+    sethologram_success: "%prefix% <green>Hologram for zone '<id>' has been created/updated and saved.</green>"
+    delhologram_success: "%prefix% <green>Hologram for zone '<id>' has been deleted.</green>"
+    hologram_not_found: "%prefix% <red>Zone '<id>' does not have a hologram set.</red>"
+    hologram_already_exists: "%prefix% <red>Zone '<id>' already has a hologram. Use /rtpzone delhologram first.</red>"
+    ignore_enabled: "%prefix% <green>You are now ignoring RTP Zone teleports.</green>"
+    ignore_disabled: "%prefix% <yellow>You are no longer ignoring RTP Zone teleports.</yellow>"
+    list_header: "%prefix% <gold>Available RTP Zones:</gold>"
+    list_format: "<dark_gray> - <yellow><id></yellow> <gray>(Target: <target>)"
+    list_empty: "%prefix% <gray>There are no RTP zones configured.</gray>"
+  setup:
+    started: "%prefix% <green>Started setup for RTP Zone '<id>'. You have been given the wand tool.</green>"
+    cancelled: "%prefix% <yellow>RTP Zone setup cancelled.</yellow>"
+    pos1_prompt: "%prefix% <gray>Left-click a block to set the first corner of the zone.</gray>"
+    pos2_prompt: "%prefix% <gray>Right-click a block to set the second corner of the zone.</gray>"
+    pos1_set: "%prefix% <green>Position 1 set to: <coords></green>"
+    pos2_set: "%prefix% <green>Position 2 set to: <coords></green>"
+    target_prompt: "%prefix% <gray>Type the name of the target world or server for this zone in chat.</gray>"
+    target_set: "%prefix% <green>Target set to: <target></green>"
+    min_radius_prompt: "%prefix% <gray>Type the minimum teleport radius in chat.</gray>"
+    min_radius_set: "%prefix% <green>Minimum radius set to: <radius></green>"
+    max_radius_prompt: "%prefix% <gray>Type the maximum teleport radius in chat.</gray>"
+    max_radius_set: "%prefix% <green>Maximum radius set to: <radius></green>"
+    interval_prompt: "%prefix% <gray>Type the teleport interval (in seconds) in chat.</gray>"
+    interval_set: "%prefix% <green>Teleport interval set to: <seconds>s</green>"
+    min_spread_prompt: "%prefix% <gray>Type the minimum player spread distance (in blocks) in chat.</gray>"
+    min_spread_set: "%prefix% <green>Minimum spread distance set to: <distance> blocks</green>"
+    max_spread_prompt: "%prefix% <gray>Type the maximum player spread distance (in blocks) in chat.</gray>"
+    max_spread_set: "%prefix% <green>Maximum spread distance set to: <distance> blocks</green>"
+    view_distance_prompt: "%prefix% <gray>Type the hologram view distance (in blocks) in chat.</gray>"
+    view_distance_set: "%prefix% <green>Hologram view distance set to: <distance> blocks</green>"
+    complete: "%prefix% <green>RTP Zone '<id>' has been successfully created!</green>"
+  error:
+    already_in_setup: "%prefix% <red>You are already in setup mode. Type '/rtpzone cancel' to exit.</red>"
+    already_exists: "%prefix% <red>A zone with the ID '<id>' already exists.</red>"
+    not_found: "%prefix% <red>Could not find a zone with the ID '<id>'.</red>"
+    invalid_number: "%prefix% <red>That is not a valid number. Please try again.</red>"
+    invalid_material: "%prefix% <red>The material '<material>' is not valid.</red>"
+    save_failed: "%prefix% <red>An error occurred while saving the zone. Check the console.</red>"

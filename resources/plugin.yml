@@ -1,0 +1,63 @@
+name: JustRTP
+version: 3.2.0
+main: eu.kotori.justRTP.JustRTP
+api-version: '1.20'
+author: kotori
+description: A highly optimized and safe Random Teleport plugin with Folia, Velocity, and MySQL support.
+folia-supported: true
+softdepend: [Vault, PlaceholderAPI, WorldGuard]
+commands:
+  justrtp:
+    description: Randomly teleports a player with advanced options.
+    aliases: [rtp, jrtp, wild, randomtp]
+    usage: "/<command> [player/world/server] [args...]"
+  rtpzone:
+    description: Manages RTP Zones.
+    aliases: [rtpzones]
+    usage: "/<command> <setup|delete|list|cancel|sethologram|delhologram|ignore> [args...]"
+permissions:
+  justrtp.admin:
+    description: Grants access to all JustRTP admin commands like /rtp reload and /rtp proxystatus.
+    default: op
+  justrtp.admin.zone:
+    description: Allows creating, deleting, and managing RTP Zones.
+    default: op
+  justrtp.command.rtp:
+    description: Allows using the basic /rtp command for self-teleportation.
+    default: true
+  justrtp.command.rtp.others:
+    description: Allows teleporting other players using /rtp <player>.
+    default: op
+  justrtp.command.rtp.world:
+    description: Allows specifying a world to teleport in, e.g., /rtp world_nether.
+    default: op
+  justrtp.command.rtp.server:
+    description: Allows teleporting to another server in the network, e.g., /rtp survival.
+    default: op
+  justrtp.command.rtp.radius:
+    description: Allows specifying a custom min/max radius for a teleport.
+    default: op
+  justrtp.command.reload:
+    description: Allows use of the /rtp reload command.
+    default: op
+  justrtp.command.credits:
+    description: Allows use of the /rtp credits command.
+    default: true
+  justrtp.command.confirm:
+    description: Allows usage of the /rtp confirm command for economy teleports.
+    default: true
+  justrtp.command.zone.ignore:
+    description: Allows toggling RTP Zone teleports for oneself.
+    default: true
+  justrtp.cooldown.bypass:
+    description: Bypasses the teleport cooldown.
+    default: op
+  justrtp.delay.bypass:
+    description: Bypasses the teleport delay/warmup.
+    default: op
+  justrtp.cost.bypass:
+    description: Bypasses the teleport cost if economy is enabled.
+    default: op
+  justrtp.group.*:
+    description: Wildcard permission for all permission groups. (e.g., justrtp.group.vip)
+    default: op

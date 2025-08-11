@@ -1,0 +1,18 @@
+# ----------------------------------------------------------------
+# JustRTP Command Alias Configuration
+# ----------------------------------------------------------------
+# CONFIG VERSION - DO NOT CHANGE THIS
+config-version: 1
+# ----------------------------------------------------------------
+#
+# Enable or disable command aliases here.
+# If an alias is set to 'false', it will be completely disabled and will not
+# conflict with any other plugins on your server.
+#
+# The main plugin command is /justrtp, which cannot be disabled.
+
+enabled-aliases:
+  rtp: true
+  jrtp: true
+  wild: true
+  randomtp: true

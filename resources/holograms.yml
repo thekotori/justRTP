@@ -1,0 +1,38 @@
+# ----------------------------------------------------------------
+# JustRTP Zone Hologram Configuration
+# ----------------------------------------------------------------
+# CONFIG VERSION - DO NOT CHANGE THIS
+config-version: 3
+# ----------------------------------------------------------------
+#
+# Customize the holograms that appear above RTP zones here.
+# These settings can be overridden for individual zones in rtp_zones.yml.
+#
+# Placeholders for hologram lines:
+#   <zone_id>: The ID of the zone.
+#   <time>: The remaining seconds in the countdown.
+#
+# ----------------------------------------------------------------
+
+hologram-settings:
+  # The vertical distance (in blocks) between each line of the hologram.
+  line-spacing: 0.35
+  # The default vertical offset (in blocks) from the zone's center point.
+  # This can be overridden per-zone with /rtpzone sethologram <id> [offset]
+  y-offset: 2.5
+  # The scale of the hologram text. 1.0 is default size.
+  scale: 1.0
+
+  # The lines of text to display in the hologram.
+  # Use an empty string "" for a blank line.
+  lines:
+    - "<gradient:#20B2AA:#7FFFD4><bold>RTP Zone</bold></gradient>"
+    - ""
+    - "<gray>Teleporting in <white><time>s</white>..."
+
+  # Particle effect that swirls around the hologram location.
+  particles:
+    enabled: true
+    particle: "ENCHANTMENT_TABLE"
+    count: 2
+    radius: 0.8
