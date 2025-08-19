@@ -1,7 +1,7 @@
 # JustRTP
 
 <p align="center">
-<img src="https://i.imgur.com/MiRprSk.png" alt="JustRTP Logo" width="1000"/>
+<img src="https://i.imgur.com/L7h5u0a.png" alt="JustRTP Logo" width="1000"/>
 </p>
 
 <p align="center">
