@@ -8,13 +8,9 @@ import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import java.io.File;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.Queue;
 import java.util.logging.Level;
 public class LocationCacheManager {
     private final JustRTP plugin;
@@ -128,7 +124,7 @@ public class LocationCacheManager {
         if (!plugin.getConfigManager().isCacheEnabledForWorld(world)) return;
 
         ConcurrentLinkedQueue<Location> queue = locationCache.get(world.getName());
-        if (queue == null || queue.size() >= cacheSize || isRefilling.getOrDefault(world.getName(), false)) {
+        if (queue == null || queue.size() >= cacheSize) {
             return;
         }
 
@@ -137,9 +133,10 @@ public class LocationCacheManager {
             return;
         }
 
-        isRefilling.put(world.getName(), true);
-        plugin.debug("Starting refill worker for world '" + world.getName() + "'. Current size: " + queue.size() + "/" + cacheSize);
-        fillQueueWorker(world, cacheSize - queue.size());
+        if (isRefilling.replace(world.getName(), false, true)) {
+            plugin.debug("Starting refill worker for world '" + world.getName() + "'. Current size: " + queue.size() + "/" + cacheSize);
+            fillQueueWorker(world, cacheSize - queue.size());
+        }
     }
 
     private void fillQueueWorker(World world, int locationsNeeded) {

@@ -30,6 +30,7 @@ public class HologramManager {
     private FileConfiguration displayEntitiesConfig;
     private final File displayEntitiesFile;
     private final Map<String, HologramInstance> activeHolograms = new ConcurrentHashMap<>();
+    private final Map<String, Boolean> hologramCreationLocks = new ConcurrentHashMap<>();
     private final String HOLOGRAM_METADATA_KEY = "justrtp_hologram";
 
     private static class HologramInstance {
@@ -83,49 +84,62 @@ public class HologramManager {
         return activeHolograms.containsKey(zoneId.toLowerCase());
     }
 
+    public boolean isBeingCreated(String zoneId) {
+        return hologramCreationLocks.containsKey(zoneId.toLowerCase());
+    }
+
     public double getDefaultYOffset() {
         return hologramsConfig.getDouble("hologram-settings.y-offset", 2.5);
     }
 
     public void createOrUpdateHologram(String zoneId, Location location, int viewDistance) {
+        if (hologramCreationLocks.putIfAbsent(zoneId.toLowerCase(), true) != null) {
+            plugin.debug("Hologram creation/update for " + zoneId + " is already in progress.");
+            return;
+        }
+
         plugin.getFoliaScheduler().runAtLocation(location, () -> {
-            removeHologram(zoneId);
-            World world = location.getWorld();
-            if (world == null) return;
+            try {
+                removeHologram(zoneId);
+                World world = location.getWorld();
+                if (world == null) return;
 
-            List<String> lines = hologramsConfig.getStringList("hologram-settings.lines");
-            double lineSpacing = hologramsConfig.getDouble("hologram-settings.line-spacing", 0.35);
-            float scale = (float) hologramsConfig.getDouble("hologram-settings.scale", 1.0);
-            Location textLocation = location.clone();
+                List<String> lines = hologramsConfig.getStringList("hologram-settings.lines");
+                double lineSpacing = hologramsConfig.getDouble("hologram-settings.line-spacing", 0.35);
+                float scale = (float) hologramsConfig.getDouble("hologram-settings.scale", 1.0);
+                Location textLocation = location.clone();
 
-            List<TextDisplay> textDisplays = new ArrayList<>();
-            List<String> entityUuids = new ArrayList<>();
+                List<TextDisplay> textDisplays = new ArrayList<>();
+                List<String> entityUuids = new ArrayList<>();
 
-            for (String line : lines) {
-                if (line.isEmpty()) {
+                for (String line : lines) {
+                    if (line.isEmpty()) {
+                        textLocation.subtract(0, lineSpacing, 0);
+                        continue;
+                    }
+                    TextDisplay display = world.spawn(textLocation, TextDisplay.class, d -> {
+                        Transformation transformation = d.getTransformation();
+                        transformation.getScale().set(new Vector3f(scale, scale, scale));
+                        d.setTransformation(transformation);
+                        d.setBillboard(Display.Billboard.CENTER);
+                        d.setBackgroundColor(Color.fromARGB(0, 0, 0, 0));
+                        d.setShadowed(true);
+                        d.setPersistent(false);
+
+                        d.setViewRange(viewDistance);
+                        d.text(MiniMessage.miniMessage().deserialize(line, Placeholder.unparsed("zone_id", zoneId), Placeholder.unparsed("time", "")));
+                        d.setMetadata(HOLOGRAM_METADATA_KEY, new FixedMetadataValue(plugin, zoneId));
+                    });
+                    textDisplays.add(display);
+                    entityUuids.add(display.getUniqueId().toString());
                     textLocation.subtract(0, lineSpacing, 0);
-                    continue;
                 }
-                TextDisplay display = world.spawn(textLocation, TextDisplay.class, d -> {
-                    Transformation transformation = d.getTransformation();
-                    transformation.getScale().set(new Vector3f(scale, scale, scale));
-                    d.setTransformation(transformation);
-                    d.setBillboard(Display.Billboard.CENTER);
-                    d.setBackgroundColor(Color.fromARGB(0, 0, 0, 0));
-                    d.setShadowed(true);
-                    d.setPersistent(false);
-
-                    d.setViewRange(viewDistance);
-                    d.text(MiniMessage.miniMessage().deserialize(line, Placeholder.unparsed("zone_id", zoneId), Placeholder.unparsed("time", "")));
-                    d.setMetadata(HOLOGRAM_METADATA_KEY, new FixedMetadataValue(plugin, zoneId));
-                });
-                textDisplays.add(display);
-                entityUuids.add(display.getUniqueId().toString());
-                textLocation.subtract(0, lineSpacing, 0);
+                activeHolograms.put(zoneId.toLowerCase(), new HologramInstance(textDisplays));
+                displayEntitiesConfig.set("zones." + zoneId.toLowerCase(), entityUuids);
+                saveDisplayEntities();
+            } finally {
+                hologramCreationLocks.remove(zoneId.toLowerCase());
             }
-            activeHolograms.put(zoneId.toLowerCase(), new HologramInstance(textDisplays));
-            displayEntitiesConfig.set("zones." + zoneId.toLowerCase(), entityUuids);
-            saveDisplayEntities();
         });
     }
 
@@ -133,7 +147,9 @@ public class HologramManager {
         HologramInstance instance = activeHolograms.get(zoneId.toLowerCase());
         if (instance == null || instance.displays.isEmpty()) return;
 
-        if (instance.displays.get(0).isDead() || !instance.displays.get(0).isValid()) {
+        boolean anyValid = instance.displays.stream().anyMatch(d -> d != null && d.isValid() && !d.isDead());
+        if (!anyValid) {
+            plugin.debug("All hologram displays for zone " + zoneId + " are invalid/dead. Removing instance.");
             activeHolograms.remove(zoneId.toLowerCase());
             return;
         }

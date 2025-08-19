@@ -24,6 +24,7 @@ import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.logging.Level;
 import java.util.stream.Collectors;
 
 public class RTPZoneManager {
@@ -95,25 +96,29 @@ public class RTPZoneManager {
         final int[] countdown = {interval + 1};
 
         CancellableTask task = plugin.getFoliaScheduler().runTimerAtLocation(zoneCenter, () -> {
-            countdown[0]--;
+            try {
+                countdown[0]--;
 
-            List<Player> playersInZone = getPlayersInZone(zone.getId());
+                List<Player> playersInZone = getPlayersInZone(zone.getId());
 
-            if (countdown[0] <= 0) {
-                plugin.getHologramManager().updateHologramTime(zone.getId(), 0);
-                if (!playersInZone.isEmpty()) {
-                    teleportPlayersInZone(playersInZone, zone);
+                if (countdown[0] <= 0) {
+                    plugin.getHologramManager().updateHologramTime(zone.getId(), 0);
+                    if (!playersInZone.isEmpty()) {
+                        teleportPlayersInZone(playersInZone, zone);
+                    }
+                    countdown[0] = interval + 1;
+                    return;
                 }
-                countdown[0] = interval + 1;
-                return;
-            }
 
-            plugin.getHologramManager().updateHologramTime(zone.getId(), countdown[0]);
+                plugin.getHologramManager().updateHologramTime(zone.getId(), countdown[0]);
 
-            for (Player player : playersInZone) {
-                if (!isIgnoring(player)) {
-                    plugin.getFoliaScheduler().runAtEntity(player, () -> updateWaitingEffects(player, zone, countdown[0]));
+                for (Player player : playersInZone) {
+                    if (!isIgnoring(player)) {
+                        plugin.getFoliaScheduler().runAtEntity(player, () -> updateWaitingEffects(player, zone, countdown[0]));
+                    }
                 }
+            } catch (Exception e) {
+                plugin.getLogger().log(Level.SEVERE, "Error in RTPZone scheduler for zone '" + zone.getId() + "':", e);
             }
         }, 1L, 20L);
 
@@ -128,7 +133,7 @@ public class RTPZoneManager {
             for (RTPZone zone : zones.values()) {
                 Location holoLoc = zone.getHologramLocation();
                 if (holoLoc != null && holoLoc.getWorld().isChunkLoaded(holoLoc.getBlockX() >> 4, holoLoc.getBlockZ() >> 4)) {
-                    if (!plugin.getHologramManager().isHologramActive(zone.getId())) {
+                    if (!plugin.getHologramManager().isHologramActive(zone.getId()) && !plugin.getHologramManager().isBeingCreated(zone.getId())) {
                         plugin.debug("Healer task is respawning missing hologram for zone: " + zone.getId());
                         plugin.getHologramManager().createOrUpdateHologram(zone.getId(), holoLoc, zone.getHologramViewDistance());
                     }
@@ -144,14 +149,20 @@ public class RTPZoneManager {
 
         if (teleportCandidates.isEmpty()) return;
 
-        teleportCandidates.forEach(p -> {
-            playerZoneMap.remove(p.getUniqueId());
-            recentlyTeleported.add(p.getUniqueId());
-            plugin.getFoliaScheduler().runLater(() -> recentlyTeleported.remove(p.getUniqueId()), 100L);
-            p.clearTitle();
-            plugin.getEffectsManager().clearActionBar(p);
-            plugin.getEffectsManager().applyEffects(p, getZoneEffects(zone, "teleport"));
-        });
+        Set<UUID> playersInThisZone = zonePlayersMap.get(zone.getId().toLowerCase());
+        if (playersInThisZone != null) {
+            teleportCandidates.forEach(p -> {
+                UUID playerUUID = p.getUniqueId();
+                playerZoneMap.remove(playerUUID);
+                playersInThisZone.remove(playerUUID);
+                recentlyTeleported.add(playerUUID);
+                plugin.getFoliaScheduler().runLater(() -> recentlyTeleported.remove(playerUUID), 100L);
+
+                p.clearTitle();
+                plugin.getEffectsManager().clearActionBar(p);
+                plugin.getEffectsManager().applyEffects(p, getZoneEffects(zone, "teleport"));
+            });
+        }
 
         World targetWorld = Bukkit.getWorld(zone.getTarget());
         if (targetWorld != null) {
