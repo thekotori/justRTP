@@ -113,8 +113,13 @@ public class PlayerListener implements Listener {
         Location target = center.clone().add(offsetX, 0, offsetZ);
 
         plugin.getFoliaScheduler().runAtLocation(target, () -> {
-            Location finalLoc = target.getWorld().getHighestBlockAt(target).getLocation().add(0.5, 1.5, 0.5);
-            future.complete(finalLoc);
+            World targetWorld = target.getWorld();
+            if (targetWorld != null) {
+                Location finalLoc = targetWorld.getHighestBlockAt(target).getLocation().add(0.5, 1.5, 0.5);
+                future.complete(finalLoc);
+            } else {
+                future.complete(center);
+            }
         });
 
         return future;

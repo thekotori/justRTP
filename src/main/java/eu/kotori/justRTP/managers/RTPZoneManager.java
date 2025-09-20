@@ -1,7 +1,6 @@
 package eu.kotori.justRTP.managers;
 
 import eu.kotori.justRTP.JustRTP;
-import eu.kotori.justRTP.utils.Cuboid;
 import eu.kotori.justRTP.utils.RTPZone;
 import eu.kotori.justRTP.utils.task.CancellableTask;
 import io.papermc.lib.PaperLib;
@@ -191,7 +190,7 @@ public class RTPZoneManager {
 
     private void spreadAndTeleportPlayers(List<Player> players, RTPZone zone, Location center) {
         List<CompletableFuture<Optional<Location>>> locationFutures = new ArrayList<>();
-        for (Player player : players) {
+        for (int i = 0; i < players.size(); i++) {
             locationFutures.add(findSafeSpreadLocation(center, zone.getMinSpreadDistance(), zone.getMaxSpreadDistance(), 5));
         }
 

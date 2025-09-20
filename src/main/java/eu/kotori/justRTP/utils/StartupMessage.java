@@ -39,8 +39,8 @@ public class StartupMessage {
         }
 
         TagResolver placeholders = TagResolver.builder()
-                .resolver(Placeholder.unparsed("version", plugin.getDescription().getVersion()))
-                .resolver(Placeholder.unparsed("author", String.join(", ", plugin.getDescription().getAuthors())))
+                .resolver(Placeholder.unparsed("version", plugin.getPluginMeta().getVersion()))
+                .resolver(Placeholder.unparsed("author", String.join(", ", plugin.getPluginMeta().getAuthors())))
                 .build();
 
         String mainColor = "#20B2AA";
@@ -66,7 +66,7 @@ public class StartupMessage {
         MiniMessage mm = MiniMessage.miniMessage();
 
         TagResolver placeholders = TagResolver.builder()
-                .resolver(Placeholder.unparsed("current_version", plugin.getDescription().getVersion()))
+                .resolver(Placeholder.unparsed("current_version", plugin.getPluginMeta().getVersion()))
                 .resolver(Placeholder.unparsed("latest_version", plugin.latestVersion))
                 .build();
 

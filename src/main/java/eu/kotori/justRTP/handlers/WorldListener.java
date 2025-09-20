@@ -3,8 +3,6 @@ package eu.kotori.justRTP.handlers;
 import eu.kotori.justRTP.JustRTP;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
-import org.bukkit.event.world.ChunkLoadEvent;
-import org.bukkit.event.world.ChunkUnloadEvent;
 import org.bukkit.event.world.WorldLoadEvent;
 
 public class WorldListener implements Listener {

@@ -2,7 +2,7 @@
 # JustRTP Message Configuration
 # ----------------------------------------------------------------
 # CONFIG VERSION - DO NOT CHANGE THIS
-config-version: 8
+config-version: 9
 # ----------------------------------------------------------------
 
 prefix: "<gray>[<gradient:#20B2AA:#7FFFD4>JustRTP</gradient>]</gray>"
@@ -35,6 +35,7 @@ teleport:
   start_other: "%prefix% <gray>Searching for a safe location for <player>...</gray>"
   success_other: "%prefix% <green><player> has been teleported to a random location!</green>"
   no_location_found: "%prefix% <red>Could not find a safe location after many attempts. Please try again.</red>"
+  already_in_progress: "%prefix% <red>You already have a teleport in progress. Please wait for it to complete.</red>"
   error: "%prefix% <red>An internal error occurred. Please contact an administrator.</red>"
 
 economy:

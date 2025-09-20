@@ -62,8 +62,6 @@ public class CrossServerManager {
         String argsString = String.join(" ", args);
         plugin.getDatabaseManager().createTeleportRequest(player.getUniqueId(), plugin.getConfigManager().getProxyThisServerName(), targetServer, argsString, targetWorldName, minRadius, maxRadius, "INDIVIDUAL");
 
-        String serverAlias = plugin.getConfigManager().getProxyServerAlias(targetServer);
-        plugin.getLocaleManager().sendMessage(player, "proxy.searching", Placeholder.unparsed("server", serverAlias));
         startQueueTimer(player, targetServer);
     }
 
@@ -141,14 +139,15 @@ public class CrossServerManager {
                 return world;
             }
         }
-        World defaultWorld = Bukkit.getWorld("world");
-        if (defaultWorld != null && plugin.getRtpService().isRtpEnabled(defaultWorld)) {
-            return defaultWorld;
+        
+        if (requestedWorldName != null && !requestedWorldName.isEmpty()) {
+            World directWorld = Bukkit.getWorld(requestedWorldName);
+            if (directWorld != null && plugin.getRtpService().isRtpEnabled(directWorld)) {
+                return directWorld;
+            }
         }
-        return plugin.getServer().getWorlds().stream()
-                .filter(w -> plugin.getRtpService().isRtpEnabled(w))
-                .findFirst()
-                .orElse(null);
+        
+        return null;
     }
 
     private void handleFinalizedRequest(ProxyTeleportRequest request) {

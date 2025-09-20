@@ -3,16 +3,15 @@ package eu.kotori.justRTP.managers;
 import eu.kotori.justRTP.JustRTP;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
-import java.util.LinkedList;
 import java.util.Optional;
-import java.util.Queue;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 public class TeleportQueueManager {
     private record TeleportRequest(Player player, World world, Optional<Integer> minRadius, Optional<Integer> maxRadius, CompletableFuture<Boolean> future) {}
     private final JustRTP plugin;
-    private final Queue<TeleportRequest> queue = new LinkedList<>();
+    private final ConcurrentLinkedQueue<TeleportRequest> queue = new ConcurrentLinkedQueue<>();
 
     public TeleportQueueManager(JustRTP plugin) {
         this.plugin = plugin;

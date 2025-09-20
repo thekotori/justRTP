@@ -5,13 +5,13 @@
 </p>
 
 <p align="center">
-<strong>An ultra-performant, modern, and highly configurable Random Teleport plugin for Paper, Folia, and Velocity/BungeeCord networks.</strong>
+<strong>Ultra-performant random teleport plugin for Paper, Folia, and Velocity/BungeeCord networks with advanced zone support.</strong>
 </p>
 
 <p align="center">
-<img src="https://img.shields.io/badge/Author-kotori-blueviolet?style=for-the-badge" alt="Author" />
-<img src="https://img.shields.io/badge/API-1.20+-brightgreen?style=for-the-badge" alt="API Version" />
-<img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License" />
+<img src="https://img.shields.io/badge/Version-3.2.2-brightgreen?style=for-the-badge" alt="Version" />
+<img src="https://img.shields.io/badge/API-1.20+-blue?style=for-the-badge" alt="API Version" />
+<img src="https://img.shields.io/badge/Java-17+-orange?style=for-the-badge" alt="Java" />
 </p>
 
 ## 👋 Welcome to JustRTP!
@@ -20,195 +20,158 @@ Welcome to the official and complete documentation for **JustRTP**. This guide w
 
 ---
 
-## ✨ Core Features
+## ✨ Features
 
-✅ **High Performance:** Utilizes an asynchronous location cache and a sequential teleport queue for instant, lag-free teleports.  
-🛡️ **Advanced Safety Checks:** Guarantees players land safely, avoiding lava, water, cacti, and other hazards. Features intelligent NORMAL and NETHER world scanning logic.  
-🌐 **Full Proxy Support:** Seamlessly teleport players across your Velocity/BungeeCord network with a stable MySQL backend.  
-⚔️ **Arena-Style RTP Zones:** Create dynamic zones that teleport all players inside on a global timer to a random location—perfect for PvP events.  
-🎨 **Stunning & Configurable Effects:** Customize every aspect of the player experience with titles, sounds, particles, action bars, boss bars, and full MiniMessage formatting.  
-⚙️ **Deep Customization:** Control everything from per-world radii and cooldowns to permission-based perks for VIPs.  
-🚀 **Automatic Actions:** Configure automatic random teleports for a player's first join or upon respawning after death.  
-🧩 **Plugin Integrations:** Out-of-the-box support for Vault (economy), PlaceholderAPI, and WorldGuard (region protection).  
-
----
-
-## 🚀 Getting Started
-
-### 1. Installation
-1. Download the latest `JustRTP.jar`.
-2. Place the `JustRTP.jar` file into your server's `/plugins` directory.
-3. *(Optional but Recommended)* Install **Vault** and **PlaceholderAPI**.
-4. Restart your server to generate all necessary configuration files.
-
-### 2. Cross-Server Setup (Proxy)
-To enable `/rtp <server>`, you must perform these steps on **ALL** your Spigot/Paper servers:
-
-- Place the same `JustRTP.jar` in every server's `/plugins` folder.
-- Create a single **MySQL** database that all your servers can connect to.
-- Configure `mysql.yml` on every server with the same database credentials and set `enabled: true`.
-- Configure `config.yml` on every server, ensuring that `proxy.this_server_name` is unique and matches the name in your **Velocity/BungeeCord** config exactly.
+✅ **High Performance**: Asynchronous location cache and sequential teleport queue for instant, lag-free teleports  
+🛡️ **Advanced Safety**: Intelligent scanning logic for NORMAL and NETHER worlds with comprehensive hazard detection  
+🌐 **Proxy Support**: Cross-server teleports via Velocity/BungeeCord with MySQL backend  
+⚔️ **RTP Zones**: Dynamic arena-style zones with global timers for PvP events  
+🎨 **Rich Effects**: Configurable titles, sounds, particles, action bars, boss bars with MiniMessage support  
+⚙️ **Deep Configuration**: Per-world settings, cooldowns, permission-based perks  
+🚀 **Automation**: First-join and respawn teleports  
+🧩 **Integrations**: Vault economy, PlaceholderAPI, WorldGuard region protection  
 
 ---
 
-## ⚙️ Configuration Files In-Depth
+## 🚀 Installation
 
-JustRTP uses a modular file system to keep configuration clean and simple.
+### Basic Setup
+1. Download `JustRTP.jar`
+2. Place in server `/plugins` directory  
+3. Install **Vault** and **PlaceholderAPI** (recommended)
+4. Restart server to generate configs
 
-<details>
-<summary><strong>► Click to see a detailed breakdown of all 8 configuration files</strong></summary>
+### Cross-Server Setup
+For network-wide `/rtp <server>` functionality:
 
-### `config.yml` (Main Configuration)
-
-| Section | Key | Description |
-|--------|-----|-------------|
-| `settings` | `cooldown / delay` | Default cooldown and delay for `/rtp`. |
-| | `attempts` | Max attempts to find a safe spot. |
-| `respect_regions` |  | If true, respects WorldGuard claims. |
-| `rtp_settings` | `worlds & biomes` | Blacklist/whitelist worlds or biomes. |
-| `location_cache` | `enabled` | Pre-calculates safe locations. |
-| | `generate_chunks_for_cache` | Recommended on new maps. |
-| `animations` | `delay_animation / success_animation` | Animation from `animations.yml`. |
-| `delay_settings` | `cancel_on_move / combat` | Cancel teleport on move or combat. |
-| `first_join_rtp` | `enabled` | Auto-RTP on first join. |
-| `respawn_rtp` | `enabled` | Auto-RTP on respawn. |
-| `economy` | `enabled` | Use Vault to charge for `/rtp`. |
-| `performance` | `use_teleport_queue` | Queue RTPs to reduce lag. |
-| `proxy` | `enabled / this_server_name` | Enable cross-server. Server name must match proxy config. |
-| `aliases` |  | User-friendly names for servers. |
-| `effects` |  | Titles, particles, sounds, etc. |
-| `disabled_worlds` |  | Disable `/rtp` in listed worlds. |
-| `blacklist_blocks` |  | Unsafe block types. |
-| `world_types` |  | Scanning logic per world. |
-| `custom_worlds` |  | Per-world overrides. |
-| `permission_groups` |  | VIP groups with custom perks. |
-
-### `rtp_zones.yml` (Arena-Style Zones)
-- Stores teleport zones.
-- Recommended: Use `/rtpzone setup` to create them.
-
-### `animations.yml` (Particle Effects)
-- Define particle animations for delay and success phases.
-
-### `holograms.yml` (Zone Holograms)
-- Configure global hologram appearance.
-- Supports MiniMessage and placeholders.
-
-### `messages.yml` (All Plugin Text)
-- Full message customization with MiniMessage.
-
-### `mysql.yml` (Database Connection)
-- Required for proxy support.
-- Must match on all servers.
-
-### `commands.yml` (Command Aliases)
-- Enable/disable aliases like `/wild`, `/randomtp`.
-
-### `plugin.yml` (Plugin Metadata)
-- Not typically edited manually.
-
-</details>
+- Deploy `JustRTP.jar` on all network servers
+- Configure shared MySQL database in `mysql.yml` with `enabled: true`
+- Set unique `proxy.this_server_name` in `config.yml` matching proxy config
+- Ensure all servers can access the same MySQL instance
 
 ---
 
-## ⌨️ Commands & Permissions
+## ⚙️ Configuration
+
+JustRTP uses modular configuration files for clean organization:
+
+**Core Files:**
+- `config.yml` - Main settings, world configs, performance options
+- `messages.yml` - All text output with MiniMessage support  
+- `mysql.yml` - Database connection for cross-server features
+- `rtp_zones.yml` - Arena-style zone definitions
+- `animations.yml` - Particle effect configurations
+- `holograms.yml` - Zone hologram settings
+- `commands.yml` - Command alias toggles
+
+**Key Configuration Options:**
+
+| Setting | Description |
+|---------|-------------|
+| `cooldown/delay` | Default timers for RTP usage |
+| `location_cache.enabled` | Pre-calculates safe locations for performance |
+| `respect_regions` | WorldGuard region protection |
+| `proxy.enabled` | Cross-server functionality |
+| `economy.enabled` | Vault integration for paid teleports |
+| `first_join_rtp/respawn_rtp` | Automatic teleportation triggers |
+| `world_types` | Scanning algorithms per world type |
+| `permission_groups` | VIP perks and custom settings |
+
+---
+
+## ⌨️ Commands
 
 ### Player Commands
-
-| Command | Aliases | Description | Permission | Default |
-|--------|---------|-------------|------------|---------|
-| `/rtp` | jrtp, wild, randomtp | RTP in current world | `justrtp.command.rtp` | ✅ Yes |
-| `/rtp <world>` |  | RTP to specific world | `justrtp.command.rtp.world` | 👮 Op |
-| `/rtp <server>` |  | RTP to another server | `justrtp.command.rtp.server` | 👮 Op |
-| `/rtp confirm` |  | Confirms paid teleport | `justrtp.command.confirm` | ✅ Yes |
-| `/rtpzone ignore` |  | Toggle zone effects | `justrtp.command.zone.ignore` | ✅ Yes |
-| `/rtp credits` |  | Plugin info | `justrtp.command.credits` | ✅ Yes |
+| Command | Description | Permission |
+|---------|-------------|------------|
+| `/rtp` | Teleport in current world | `justrtp.command.rtp` |
+| `/rtp <world>` | Teleport to specific world | `justrtp.command.rtp.world` |
+| `/rtp <server>` | Cross-server teleport | `justrtp.command.rtp.server` |
+| `/rtp confirm` | Confirm paid teleport | `justrtp.command.confirm` |
+| `/rtpzone ignore` | Toggle zone participation | `justrtp.command.zone.ignore` |
 
 ### Admin Commands
-
 | Command | Description | Permission |
-|--------|-------------|------------|
+|---------|-------------|------------|
 | `/rtp <player>` | Teleport another player | `justrtp.command.rtp.others` |
-| `/rtp reload` | Reload configs | `justrtp.command.reload` |
-| `/rtpzone setup <id>` | Setup new zone | `justrtp.admin.zone` |
-| `/rtpzone delete <id>` | Delete zone | `justrtp.admin.zone` |
+| `/rtp reload` | Reload configurations | `justrtp.command.reload` |
+| `/rtp proxystatus` | Check MySQL connection | `justrtp.admin` |
+| `/rtpzone setup <id>` | Create new zone | `justrtp.admin.zone` |
+| `/rtpzone delete <id>` | Remove zone | `justrtp.admin.zone` |
 | `/rtpzone list` | List all zones | `justrtp.admin.zone` |
-| `/rtpzone sethologram <id> [y]` | Create hologram | `justrtp.admin.zone` |
-| `/rtpzone delhologram <id>` | Delete hologram | `justrtp.admin.zone` |
-| `/rtp proxystatus` | Check MySQL status | `justrtp.admin` |
+
+### Command Aliases
+Available aliases: `jrtp`, `wild`, `randomtp` (configurable in `commands.yml`)
 
 ---
 
 ## ⚔️ RTP Zones
 
-**RTP Zones** are powerful tools for creating automated group teleports.
+Dynamic arena-style zones for automated group teleports.
 
-### How It Works
+**Setup Process:**
+1. Use `/rtpzone setup <id>` for interactive configuration
+2. Select area with Blaze Rod wand tool
+3. Configure target world/server and radius
+4. Set teleport interval and hologram settings
 
-1. **Define Area**: Use `/rtpzone setup` to define a 3D zone.
-2. **Set Timer**: Set an interval (e.g., 300s).
-3. **Set Destination**: World or cross-server.
-4. **Teleport**: All players inside are teleported to one safe location with spread.
+**Player Experience:**
+- Automatic detection when entering/leaving zones
+- Real-time countdown displays via titles and action bars  
+- Synchronized group teleports with configurable spread
+- Optional hologram displays with custom messages
 
-### Player Experience
-
-- **Enter**: Receive title and sound.
-- **Wait**: Countdown title/action bar.
-- **Leave**: Effects cleared instantly.
-- **Teleport**: Dramatic visuals and sound.
-
-### Interactive Setup Guide: `/rtpzone setup`
-
-- **Step 1:** Select zone with wand (Blaze Rod).
-- **Step 2:** Target world/server.
-- **Step 3:** Min/Max radius.
-- **Step 4:** Teleport interval.
-- **Step 5:** Hologram view distance.
+**Zone Features:**
+- Cross-server destination support
+- Customizable teleport intervals
+- Individual player opt-out capability
+- Rich visual and audio feedback
 
 ---
 
-## 🔑 All Permissions
+## 🔑 Permissions
 
+### Core Permissions
 | Permission | Description | Default |
 |-----------|-------------|---------|
-| `justrtp.admin` | Grants all plugin access | op |
-| `justrtp.admin.zone` | Access to all `/rtpzone` commands | op |
-| `justrtp.command.rtp` | Use `/rtp` | true |
+| `justrtp.admin` | Full plugin access | op |
+| `justrtp.admin.zone` | Zone management | op |
+| `justrtp.command.rtp` | Basic RTP usage | true |
 | `justrtp.command.rtp.others` | Teleport other players | op |
-| `justrtp.command.rtp.world` | RTP to specific world | op |
-| `justrtp.command.rtp.server` | RTP to another server | op |
-| `justrtp.command.rtp.radius` | Set custom radius | op |
-| `justrtp.command.reload` | Reload config | op |
-| `justrtp.command.credits` | View plugin info | true |
-| `justrtp.command.confirm` | Confirm paid teleport | true |
-| `justrtp.command.zone.ignore` | Toggle zone ignore | true |
-| `justrtp.cooldown.bypass` | Bypass cooldown | op |
-| `justrtp.delay.bypass` | Bypass teleport delay | op |
-| `justrtp.cost.bypass` | Bypass cost | op |
-| `justrtp.group.<group_name>` | Use custom group settings | op |
+| `justrtp.command.rtp.world` | World-specific RTP | op |
+| `justrtp.command.rtp.server` | Cross-server RTP | op |
+| `justrtp.command.reload` | Reload configs | op |
 
-### Recommended Setup
+### Bypass Permissions
+| Permission | Description |
+|-----------|-------------|
+| `justrtp.cooldown.bypass` | Skip cooldown timers |
+| `justrtp.delay.bypass` | Skip warmup delays |
+| `justrtp.cost.bypass` | Skip economy costs |
 
-- **Default Players:** `justrtp.command.rtp`, `justrtp.command.confirm`, `justrtp.command.credits`, `justrtp.command.zone.ignore`
-- **Moderators:** Above + `justrtp.command.rtp.others`, `justrtp.cooldown.bypass`
-- **Admins:** `justrtp.admin`
+### Group Permissions
+Use `justrtp.group.<name>` for custom permission groups defined in config.
 
 ---
 
-## 📌 All PlaceholderAPI Placeholders
+## � PlaceholderAPI
+
+Available placeholders for integration with other plugins:
 
 | Placeholder | Description |
 |------------|-------------|
 | `%justrtp_cooldown%` | Remaining cooldown (formatted) |
 | `%justrtp_cooldown_raw%` | Remaining cooldown (seconds) |
-| `%justrtp_cost%` | RTP cost in current world |
-| `%justrtp_delay%` | RTP delay time |
-| `%justrtp_cooldown_total%` | Total cooldown time |
-| `%justrtp_world_min_radius%` | Minimum teleport radius |
-| `%justrtp_world_max_radius%` | Maximum teleport radius |
+| `%justrtp_cost%` | RTP cost for current world |
+| `%justrtp_delay%` | Teleport warmup time |
+| `%justrtp_world_min_radius%` | Minimum teleport distance |
+| `%justrtp_world_max_radius%` | Maximum teleport distance |
 
 ---
 
-<p align="center">
-<em>Made with ❤️ by <strong>kotori</strong></em>
-</p>
+## 🔧 Technical Requirements
+
+- **Server Software**: Paper 1.20+, Folia supported
+- **Java**: Version 17 or higher  
+- **Dependencies**: Vault (optional), PlaceholderAPI (optional), WorldGuard (optional)
+- **Database**: MySQL 8.0+ for cross-server features

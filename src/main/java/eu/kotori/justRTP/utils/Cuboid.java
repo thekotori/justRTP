@@ -23,7 +23,8 @@ public class Cuboid {
     }
 
     public boolean contains(Location loc) {
-        return loc.getWorld().getName().equals(this.worldName) &&
+        return loc != null && loc.getWorld() != null && 
+                loc.getWorld().getName().equals(this.worldName) &&
                 loc.getBlockX() >= x1 && loc.getBlockX() <= x2 &&
                 loc.getBlockY() >= y1 && loc.getBlockY() <= y2 &&
                 loc.getBlockZ() >= z1 && loc.getBlockZ() <= z2;
@@ -36,10 +37,12 @@ public class Cuboid {
     }
 
     public Location getLowerNE() {
-        return new Location(Bukkit.getWorld(worldName), x1, y1, z1);
+        World world = Bukkit.getWorld(worldName);
+        return world != null ? new Location(world, x1, y1, z1) : null;
     }
 
     public Location getUpperSW() {
-        return new Location(Bukkit.getWorld(worldName), x2, y2, z2);
+        World world = Bukkit.getWorld(worldName);
+        return world != null ? new Location(world, x2, y2, z2) : null;
     }
 }

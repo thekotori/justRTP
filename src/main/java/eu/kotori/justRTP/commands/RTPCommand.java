@@ -68,11 +68,16 @@ public class RTPCommand implements CommandExecutor {
         if (parsed.targetServer() != null && !parsed.targetServer().equalsIgnoreCase(plugin.getConfigManager().getProxyThisServerName())) {
             return validateAndInitiateProxyRtp(sender, parsed, args);
         } else {
-            if (sender instanceof Player && parsed.targetPlayer() != null && sender.equals(parsed.targetPlayer())) {
-                plugin.getLocaleManager().sendMessage(sender, "teleport.start_self");
-            } else if (parsed.targetPlayer() != null) {
-                plugin.getLocaleManager().sendMessage(sender, "teleport.start_other", Placeholder.unparsed("player", parsed.targetPlayer().getName()));
+            if (sender instanceof Player && parsed.targetPlayer() != null && !sender.equals(parsed.targetPlayer()) && !sender.hasPermission("justrtp.command.rtp.others")) {
+                plugin.getLocaleManager().sendMessage(sender, "command.no_permission");
+                return CompletableFuture.completedFuture(false);
             }
+            
+            if (sender instanceof Player && plugin.getDelayManager().isDelayed(parsed.targetPlayer().getUniqueId())) {
+                plugin.getLocaleManager().sendMessage(sender, "teleport.already_in_progress");
+                return CompletableFuture.completedFuture(false);
+            }
+            
             return validateAndInitiateLocalRtp(sender, parsed, crossServerNoDelay);
         }
     }
@@ -189,6 +194,15 @@ public class RTPCommand implements CommandExecutor {
             plugin.getLocaleManager().sendMessage(sender, "command.no_permission");
             return CompletableFuture.completedFuture(false);
         }
+        if (sender instanceof Player && !sender.equals(target) && !sender.hasPermission("justrtp.command.rtp.others")) {
+            plugin.getLocaleManager().sendMessage(sender, "command.no_permission");
+            return CompletableFuture.completedFuture(false);
+        }
+        
+        if (plugin.getDelayManager().isDelayed(target.getUniqueId())) {
+            plugin.getLocaleManager().sendMessage(sender, "teleport.already_in_progress");
+            return CompletableFuture.completedFuture(false);
+        }
 
         long remainingCooldown = plugin.getCooldownManager().getRemaining(target.getUniqueId());
         if (remainingCooldown > 0) {
@@ -198,6 +212,9 @@ public class RTPCommand implements CommandExecutor {
 
         int cooldown = plugin.getConfigManager().getCooldown(target, target.getWorld());
         plugin.getCooldownManager().setCooldown(target.getUniqueId(), cooldown);
+
+        String serverAlias = plugin.getConfigManager().getProxyServerAlias(parsed.targetServer());
+        plugin.getLocaleManager().sendMessage(sender, "proxy.searching", Placeholder.unparsed("server", serverAlias));
 
         plugin.getCrossServerManager().sendFindLocationRequest(target, parsed.targetServer(), parsed.proxyTargetWorld(), parsed.minRadius(), parsed.maxRadius(), rawArgs);
         return CompletableFuture.completedFuture(true);
@@ -237,13 +254,26 @@ public class RTPCommand implements CommandExecutor {
             }
             if (requireConfirmation && sender instanceof Player && sender.equals(targetPlayer) && !plugin.getConfirmationManager().hasPendingConfirmation(targetPlayer)) {
                 CompletableFuture<Boolean> confirmationFuture = new CompletableFuture<>();
-                plugin.getConfirmationManager().addPendingConfirmation(targetPlayer, () ->
-                        executeTeleportationLogic(sender, parsed, crossServerNoDelay, finalCost, true)
-                                .thenAccept(confirmationFuture::complete));
+                plugin.getConfirmationManager().addPendingConfirmation(targetPlayer, () -> {
+                    if (sender instanceof Player && sender.equals(targetPlayer)) {
+                        plugin.getLocaleManager().sendMessage(sender, "teleport.start_self");
+                    } else if (parsed.targetPlayer() != null) {
+                        plugin.getLocaleManager().sendMessage(sender, "teleport.start_other", Placeholder.unparsed("player", parsed.targetPlayer().getName()));
+                    }
+                    executeTeleportationLogic(sender, parsed, crossServerNoDelay, finalCost, true)
+                            .thenAccept(confirmationFuture::complete);
+                });
                 plugin.getLocaleManager().sendMessage(targetPlayer, "economy.needs_confirmation", Placeholder.unparsed("cost", String.valueOf(finalCost)));
                 return confirmationFuture;
             }
         }
+        
+        if (sender instanceof Player && sender.equals(targetPlayer)) {
+            plugin.getLocaleManager().sendMessage(sender, "teleport.start_self");
+        } else if (parsed.targetPlayer() != null) {
+            plugin.getLocaleManager().sendMessage(sender, "teleport.start_other", Placeholder.unparsed("player", parsed.targetPlayer().getName()));
+        }
+        
         return executeTeleportationLogic(sender, parsed, crossServerNoDelay, finalCost, false);
     }
 
@@ -347,7 +377,7 @@ public class RTPCommand implements CommandExecutor {
     }
 
     private void sendCredits(CommandSender sender) {
-        String version = plugin.getDescription().getVersion();
+        String version = plugin.getPluginMeta().getVersion();
         MiniMessage mm = MiniMessage.miniMessage();
         String link = "https://builtbybit.com/resources/justrtp-lightweight-fast-randomtp.70322/";
         List<String> creditsMessage = Arrays.asList("", "<gradient:#20B2AA:#7FFFD4>JustRTP</gradient> <gray>v" + version, "", "<gray>Developed by <white>kotori</white>.", "<click:open_url:'" + link + "'><hover:show_text:'<green>Click to visit!'><#7FFFD4><u>Click here to check for updates!</u></hover></click>", "");

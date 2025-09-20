@@ -9,6 +9,8 @@ import net.kyori.adventure.text.minimessage.tag.resolver.TagResolver;
 import net.kyori.adventure.title.Title;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
+import org.bukkit.NamespacedKey;
+import org.bukkit.Registry;
 import org.bukkit.Sound;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
@@ -77,7 +79,7 @@ public class EffectsManager {
         for(String effectString : cs.getStringList("effects")){
             try {
                 String[] parts = effectString.split(":");
-                PotionEffectType type = PotionEffectType.getByName(parts[0].toUpperCase());
+                PotionEffectType type = Registry.EFFECT.get(NamespacedKey.minecraft(parts[0].toLowerCase()));
                 int amplifier = Integer.parseInt(parts[1]);
                 if(type != null) {
                     player.addPotionEffect(new PotionEffect(type, durationInSeconds * 20 + 10, amplifier, false, false));

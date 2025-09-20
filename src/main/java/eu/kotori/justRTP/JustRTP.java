@@ -18,7 +18,7 @@ import java.io.File;
 public final class JustRTP extends JavaPlugin {
 
     private static final int CONFIG_VERSION = 15;
-    private static final int MESSAGES_CONFIG_VERSION = 8;
+    private static final int MESSAGES_CONFIG_VERSION = 9;
     private static final int MYSQL_CONFIG_VERSION = 2;
     private static final int ANIMATIONS_CONFIG_VERSION = 1;
     private static final int COMMANDS_CONFIG_VERSION = 1;
@@ -45,6 +45,7 @@ public final class JustRTP extends JavaPlugin {
     private RTPZoneManager rtpZoneManager;
     private ZoneSetupManager zoneSetupManager;
     private HologramManager hologramManager;
+    private VersionChecker versionChecker;
 
     public boolean updateAvailable = false;
     public String latestVersion = "";
@@ -105,13 +106,15 @@ public final class JustRTP extends JavaPlugin {
         getServer().getPluginManager().registerEvents(new PlayerListener(this), this);
         getServer().getPluginManager().registerEvents(new WorldListener(this), this);
 
+        versionChecker = new VersionChecker(this);
+
         foliaScheduler.runLater(() -> {
             hologramManager.initialize();
             hologramManager.cleanupAllHolograms();
             rtpZoneManager.loadZones();
             locationCacheManager.initialize();
             StartupMessage.sendStartupMessage(this);
-            new VersionChecker(this).check();
+            versionChecker.check();
 
             for (Player player : getServer().getOnlinePlayers()) {
                 rtpZoneManager.handlePlayerMove(player, player.getLocation());
@@ -241,4 +244,5 @@ public final class JustRTP extends JavaPlugin {
     public RTPZoneManager getRtpZoneManager() { return rtpZoneManager; }
     public ZoneSetupManager getZoneSetupManager() { return zoneSetupManager; }
     public HologramManager getHologramManager() { return hologramManager; }
+    public VersionChecker getVersionChecker() { return versionChecker; }
 }

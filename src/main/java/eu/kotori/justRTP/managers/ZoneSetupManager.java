@@ -125,6 +125,10 @@ public class ZoneSetupManager {
 
         ZoneBuilder builder = setupSessions.get(player.getUniqueId());
         switch (builder.step) {
+            case AWAITING_POS1:
+            case AWAITING_POS2:
+                plugin.getLocaleManager().sendMessage(player, "zone.setup.position_first");
+                break;
             case AWAITING_TARGET:
                 builder.target = input;
                 builder.step = SetupStep.AWAITING_MIN_RADIUS;

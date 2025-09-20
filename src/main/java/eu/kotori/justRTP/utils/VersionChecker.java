@@ -10,7 +10,7 @@ import org.bukkit.event.player.PlayerJoinEvent;
 
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
-import java.net.URL;
+import java.net.URI;
 
 public class VersionChecker implements Listener {
 
@@ -20,19 +20,19 @@ public class VersionChecker implements Listener {
 
     public VersionChecker(JustRTP plugin) {
         this.plugin = plugin;
-        this.currentVersion = plugin.getDescription().getVersion();
-        this.apiUrl = "https://api.kotori.club/v1/version?product=justRTP";
+        this.currentVersion = plugin.getPluginMeta().getVersion();
+        this.apiUrl = "https://api.kotori.ink/v1/version?product=justRTP";
         this.plugin.getServer().getPluginManager().registerEvents(this, plugin);
     }
 
     public void check() {
         plugin.getFoliaScheduler().runAsync(() -> {
             try {
-                URL url = new URL(this.apiUrl);
-                HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+                URI uri = URI.create(this.apiUrl);
+                HttpURLConnection connection = (HttpURLConnection) uri.toURL().openConnection();
                 connection.setRequestMethod("GET");
-                connection.setConnectTimeout(5000);
-                connection.setReadTimeout(5000);
+                connection.setConnectTimeout(10000);
+                connection.setReadTimeout(10000);
                 connection.setRequestProperty("User-Agent", "JustRTP Version Checker");
 
                 int responseCode = connection.getResponseCode();
@@ -45,8 +45,12 @@ public class VersionChecker implements Listener {
                             plugin.updateAvailable = true;
                             plugin.latestVersion = latestVersion;
                             StartupMessage.sendUpdateNotification(plugin);
+                        } else {
+                            plugin.updateAvailable = false;
                         }
                     }
+                } else {
+                    plugin.getLogger().warning("Version check failed with response code: " + responseCode);
                 }
                 connection.disconnect();
 
