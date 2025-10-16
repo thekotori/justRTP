@@ -67,35 +67,111 @@ public class PlayerListener implements Listener {
 
         plugin.getDatabaseManager().getTeleportRequest(player.getUniqueId()).thenAccept(requestOpt -> {
             requestOpt.ifPresent(request -> {
-                plugin.debug("Found request for " + player.getName() + " with status: " + request.status() + " and type: " + request.requestType());
+                String status = request.status();
+                plugin.debug("Found request for " + player.getName() + " with status: " + status + " and type: " + request.requestType());
 
-                if ("COMPLETE".equals(request.status()) && request.location() != null) {
+                if (("COMPLETE".equals(status) || "IN_TRANSFER".equals(status)) && request.location() != null) {
                     if (!player.isOnline()) {
+                        plugin.debug("Player " + player.getName() + " went offline before teleport, removing request");
                         plugin.getDatabaseManager().removeTeleportRequest(player.getUniqueId());
                         return;
                     }
 
-                    CompletableFuture<Location> locationFuture;
-                    if (request.requestType().startsWith("GROUP")) {
-                        plugin.debug("Player is part of a group teleport. Spreading around target.");
-                        locationFuture = getSpreadLocation(request.location());
-                    } else {
-                        locationFuture = CompletableFuture.completedFuture(request.location());
-                    }
-
-                    locationFuture.thenAccept(targetLocation -> {
-                        if (targetLocation != null && player.isOnline()) {
-                            PaperLib.teleportAsync(player, targetLocation).thenAccept(success -> {
-                                if (success) {
-                                    plugin.getEffectsManager().applyPostTeleportEffects(player);
+                    plugin.getDatabaseManager().confirmTeleportTransfer(player.getUniqueId(), request.targetServer())
+                            .thenRun(() -> {
+                                plugin.debug("Transfer confirmed for " + player.getName() + ", proceeding with teleport");
+                                
+                                CompletableFuture<Location> locationFuture;
+                                if (request.requestType().startsWith("GROUP")) {
+                                    plugin.debug("Player is part of a group teleport. Spreading around target.");
+                                    locationFuture = getSpreadLocation(request.location());
+                                } else {
+                                    locationFuture = CompletableFuture.completedFuture(request.location());
                                 }
+
+                                locationFuture.thenAccept(targetLocation -> {
+                                    if (targetLocation != null && player.isOnline()) {
+                                        plugin.debug("Teleporting " + player.getName() + " to cross-server location: " + targetLocation);
+                                        
+                                        if (targetLocation.getWorld() == null) {
+                                            plugin.getLogger().severe("Target world is null for " + player.getName() + ", cannot teleport");
+                                            plugin.getDatabaseManager().removeTeleportRequest(player.getUniqueId());
+                                            return;
+                                        }
+                                        
+                                        if (targetLocation.getWorld().getEnvironment() == World.Environment.NETHER) {
+                                            double y = targetLocation.getY();
+                                            if (y >= 126.0) {
+                                                plugin.getLogger().severe("╔════════════════════════════════════════════════════════════╗");
+                                                plugin.getLogger().severe("║  EMERGENCY: Cross-server nether Y >= 126 BLOCKED!         ║");
+                                                plugin.getLogger().severe("║  Player: " + player.getName() + "                          ║");
+                                                plugin.getLogger().severe("║  Location: Y=" + y + " (head at Y=" + (y+1) + ")          ║");
+                                                plugin.getLogger().severe("║  Type: " + request.requestType() + "                       ║");
+                                                plugin.getLogger().severe("║  This should NEVER happen - all layers failed!            ║");
+                                                plugin.getLogger().severe("╚════════════════════════════════════════════════════════════╝");
+                                                
+                                                if (player.isOnline()) {
+                                                    plugin.getLocaleManager().sendMessage(player, "teleport.failed");
+                                                }
+                                                plugin.getDatabaseManager().removeTeleportRequest(player.getUniqueId());
+                                                return;
+                                            }
+                                            plugin.debug("[CROSS-SERVER NETHER FINAL] ✓ Verified Y=" + y + " < 126 for " + player.getName());
+                                        }
+                                        
+                                        PaperLib.teleportAsync(player, targetLocation).thenAccept(success -> {
+                                            if (success) {
+                                                plugin.debug("Successfully teleported " + player.getName() + " to cross-server location");
+                                                
+                                                try {
+                                                    if (player.isOnline()) {
+                                                        plugin.getEffectsManager().applyPostTeleportEffects(player);
+                                                        plugin.getLocaleManager().sendMessage(player, "teleport.success");
+                                                    }
+                                                } catch (Exception e) {
+                                                    plugin.getLogger().warning("Error applying post-teleport effects for " + player.getName() + ": " + e.getMessage());
+                                                }
+                                            } else {
+                                                plugin.getLogger().warning("Failed to teleport " + player.getName() + " to cross-server location");
+                                                if (player.isOnline()) {
+                                                    plugin.getLocaleManager().sendMessage(player, "teleport.failed");
+                                                }
+                                            }
+                                            
+                                            plugin.getDatabaseManager().removeTeleportRequest(player.getUniqueId());
+                                        }).exceptionally(throwable -> {
+                                            plugin.getLogger().severe("Exception during teleport for " + player.getName() + ": " + throwable.getMessage());
+                                            if (player.isOnline()) {
+                                                plugin.getLocaleManager().sendMessage(player, "teleport.failed");
+                                            }
+                                            plugin.getDatabaseManager().removeTeleportRequest(player.getUniqueId());
+                                            return null;
+                                        });
+                                    } else {
+                                        plugin.debug("Target location invalid or player offline, removing request");
+                                        plugin.getDatabaseManager().removeTeleportRequest(player.getUniqueId());
+                                    }
+                                }).exceptionally(throwable -> {
+                                    plugin.getLogger().severe("Error getting spread location for " + player.getName() + ": " + throwable.getMessage());
+                                    plugin.getDatabaseManager().removeTeleportRequest(player.getUniqueId());
+                                    return null;
+                                });
+                            })
+                            .exceptionally(throwable -> {
+                                plugin.getLogger().severe("Failed to confirm transfer for " + player.getName() + ": " + throwable.getMessage());
                                 plugin.getDatabaseManager().removeTeleportRequest(player.getUniqueId());
+                                return null;
                             });
-                        } else {
-                            plugin.getDatabaseManager().removeTeleportRequest(player.getUniqueId());
-                        }
-                    });
+                    
+                } else if ("PENDING".equals(status) || "PROCESSING".equals(status)) {
+                    plugin.debug("Request for " + player.getName() + " is still " + status + ", keeping it for processing");
+                    
+                } else if ("FAILED".equals(status)) {
+                    plugin.debug("Request for " + player.getName() + " has FAILED status, removing");
+                    plugin.getDatabaseManager().removeTeleportRequest(player.getUniqueId());
+                    
                 } else {
+                    plugin.getLogger().warning("Unknown request status '" + status + "' for " + player.getName() + ", removing");
                     plugin.getDatabaseManager().removeTeleportRequest(player.getUniqueId());
                 }
             });
@@ -110,14 +186,35 @@ public class PlayerListener implements Listener {
         double spread = ThreadLocalRandom.current().nextDouble(minSpread, maxSpread);
         double offsetX = spread * Math.cos(angle);
         double offsetZ = spread * Math.sin(angle);
+        
         Location target = center.clone().add(offsetX, 0, offsetZ);
 
         plugin.getFoliaScheduler().runAtLocation(target, () -> {
             World targetWorld = target.getWorld();
             if (targetWorld != null) {
-                Location finalLoc = targetWorld.getHighestBlockAt(target).getLocation().add(0.5, 1.5, 0.5);
-                future.complete(finalLoc);
+                if (targetWorld.getEnvironment() == World.Environment.NETHER) {
+                    Location finalLoc = target.clone();
+                    finalLoc.add(0.5, 0, 0.5);
+                    
+                    if (finalLoc.getY() >= 126.0) {
+                        plugin.getLogger().severe("╔════════════════════════════════════════════════════════════╗");
+                        plugin.getLogger().severe("║  CRITICAL: Cross-server spread Y >= 126 in NETHER!        ║");
+                        plugin.getLogger().severe("║  Center Y: " + center.getY() + ", Spread Y: " + finalLoc.getY() + "                    ║");
+                        plugin.getLogger().severe("║  Using center location instead of spread!                 ║");
+                        plugin.getLogger().severe("╚════════════════════════════════════════════════════════════╝");
+                        future.complete(center);
+                        return;
+                    }
+                    
+                    plugin.debug("[CROSS-SERVER NETHER] Spread location: Y=" + finalLoc.getY() + " (kept from center Y=" + center.getY() + ")");
+                    future.complete(finalLoc);
+                } else {
+                    Location finalLoc = targetWorld.getHighestBlockAt(target).getLocation().add(0.5, 1.5, 0.5);
+                    plugin.debug("[CROSS-SERVER NORMAL] Spread location: Y=" + finalLoc.getY());
+                    future.complete(finalLoc);
+                }
             } else {
+                plugin.getLogger().warning("[CROSS-SERVER] Target world is null, using center location");
                 future.complete(center);
             }
         });
@@ -152,14 +249,67 @@ public class PlayerListener implements Listener {
         }
     }
 
-    @EventHandler
+    @EventHandler(priority = EventPriority.MONITOR)
     public void onPlayerQuit(PlayerQuitEvent event) {
         Player player = event.getPlayer();
+        plugin.debug("Player " + player.getName() + " disconnecting, cleaning up resources");
+        
         plugin.getDelayManager().cancelDelay(player);
         plugin.getEffectsManager().removeBossBar(player);
         plugin.getZoneSetupManager().cancelSetup(player);
         plugin.getRtpZoneManager().handlePlayerQuit(player);
         plugin.getCrossServerManager().cancelQueueTimer(player.getUniqueId());
+        
+        handlePlayerDisconnect(player);
+    }
+    
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onPlayerKick(PlayerKickEvent event) {
+        Player player = event.getPlayer();
+        String reason = event.reason() != null ? PlainTextComponentSerializer.plainText().serialize(event.reason()) : "Unknown";
+        plugin.debug("Player " + player.getName() + " kicked (" + reason + "), cleaning up resources");
+        
+        plugin.getDelayManager().cancelDelay(player);
+        plugin.getEffectsManager().removeBossBar(player);
+        plugin.getZoneSetupManager().cancelSetup(player);
+        plugin.getRtpZoneManager().handlePlayerQuit(player);
+        plugin.getCrossServerManager().cancelQueueTimer(player.getUniqueId());
+        
+        handlePlayerDisconnect(player);
+    }
+    
+    private void handlePlayerDisconnect(Player player) {
+        if (!plugin.getConfigManager().getProxyEnabled()) return;
+        if (plugin.getDatabaseManager() == null || !plugin.getDatabaseManager().isConnected()) return;
+        
+        plugin.getDatabaseManager().getTeleportRequest(player.getUniqueId()).thenAccept(requestOpt -> {
+            requestOpt.ifPresent(request -> {
+                String status = request.status();
+                plugin.debug("Player " + player.getName() + " disconnected with request status: " + status);
+                
+                if ("IN_TRANSFER".equals(status)) {
+                    plugin.getLogger().info("Player " + player.getName() + " disconnected during transfer, marking request as FAILED");
+                    plugin.getDatabaseManager().failTeleportRequest(player.getUniqueId())
+                            .thenRun(() -> {
+                                plugin.debug("Successfully marked disconnected player's request as FAILED");
+                            })
+                            .exceptionally(throwable -> {
+                                plugin.getLogger().severe("Error handling disconnect for " + player.getName() + ": " + throwable.getMessage());
+                                return null;
+                            });
+                    
+                } else if ("PENDING".equals(status) || "PROCESSING".equals(status)) {
+                    plugin.debug("Player disconnected with " + status + " request, cleanup will handle it");
+                    
+                } else if ("COMPLETE".equals(status)) {
+                    plugin.getLogger().info("Player " + player.getName() + " disconnected before joining target server, marking as FAILED");
+                    plugin.getDatabaseManager().failTeleportRequest(player.getUniqueId());
+                }
+            });
+        }).exceptionally(throwable -> {
+            plugin.getLogger().severe("Error checking disconnect status for " + player.getName() + ": " + throwable.getMessage());
+            return null;
+        });
     }
 
     @EventHandler

@@ -26,7 +26,7 @@ public class RTPZoneTabCompleter implements TabCompleter {
         if (args.length == 1) {
             List<String> subCommands = new ArrayList<>();
             if (sender.hasPermission("justrtp.admin.zone")) {
-                subCommands.addAll(Arrays.asList("setup", "delete", "list", "cancel", "sethologram", "delhologram"));
+                subCommands.addAll(Arrays.asList("setup", "delete", "list", "cancel", "sethologram", "delhologram", "sync", "push", "pull", "status"));
             }
             if (sender.hasPermission("justrtp.command.zone.ignore")) {
                 subCommands.add("ignore");

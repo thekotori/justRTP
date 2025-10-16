@@ -1,5 +1,6 @@
 package eu.kotori.justRTP;
 
+import eu.kotori.justRTP.addons.AddonManager;
 import eu.kotori.justRTP.bstats.bukkit.Metrics;
 import eu.kotori.justRTP.commands.RTPZoneCommand;
 import eu.kotori.justRTP.commands.RTPZoneTabCompleter;
@@ -9,21 +10,25 @@ import eu.kotori.justRTP.handlers.WorldListener;
 import eu.kotori.justRTP.handlers.hooks.VaultHook;
 import eu.kotori.justRTP.managers.*;
 import eu.kotori.justRTP.utils.*;
+import org.bukkit.World;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
+import java.util.ArrayList;
+import java.util.List;
 
 public final class JustRTP extends JavaPlugin {
 
-    private static final int CONFIG_VERSION = 15;
-    private static final int MESSAGES_CONFIG_VERSION = 9;
-    private static final int MYSQL_CONFIG_VERSION = 2;
-    private static final int ANIMATIONS_CONFIG_VERSION = 1;
-    private static final int COMMANDS_CONFIG_VERSION = 1;
-    private static final int ZONES_CONFIG_VERSION = 6;
-    private static final int HOLOGRAMS_CONFIG_VERSION = 3;
+    private static final int CONFIG_VERSION = 22;
+    private static final int MESSAGES_CONFIG_VERSION = 14;
+    private static final int MYSQL_CONFIG_VERSION = 5;
+    private static final int ANIMATIONS_CONFIG_VERSION = 2;
+    private static final int COMMANDS_CONFIG_VERSION = 4;
+    private static final int ZONES_CONFIG_VERSION = 10;
+    private static final int HOLOGRAMS_CONFIG_VERSION = 6;
+    private static final int REDIS_CONFIG_VERSION = 3;
 
     private static JustRTP instance;
     private ConfigManager configManager;
@@ -45,7 +50,9 @@ public final class JustRTP extends JavaPlugin {
     private RTPZoneManager rtpZoneManager;
     private ZoneSetupManager zoneSetupManager;
     private HologramManager hologramManager;
+    private ZoneSyncManager zoneSyncManager;
     private VersionChecker versionChecker;
+    private AddonManager addonManager;
 
     public boolean updateAvailable = false;
     public String latestVersion = "";
@@ -63,6 +70,7 @@ public final class JustRTP extends JavaPlugin {
         saveDefaultResource("holograms.yml");
         saveDefaultResource("display_entities.yml");
         saveDefaultResource("cache.yml");
+        saveDefaultResource("redis.yml");
 
         ConfigUpdater.update(this, "config.yml", CONFIG_VERSION);
         ConfigUpdater.update(this, "messages.yml", MESSAGES_CONFIG_VERSION);
@@ -71,6 +79,7 @@ public final class JustRTP extends JavaPlugin {
         ConfigUpdater.update(this, "commands.yml", COMMANDS_CONFIG_VERSION);
         ConfigUpdater.update(this, "rtp_zones.yml", ZONES_CONFIG_VERSION);
         ConfigUpdater.update(this, "holograms.yml", HOLOGRAMS_CONFIG_VERSION);
+        ConfigUpdater.update(this, "redis.yml", REDIS_CONFIG_VERSION);
 
         configManager = new ConfigManager(this);
         commandManager = new CommandManager(this);
@@ -96,29 +105,50 @@ public final class JustRTP extends JavaPlugin {
         teleportQueueManager = new TeleportQueueManager(this);
         effectsManager = new EffectsManager(this);
         confirmationManager = new ConfirmationManager(this);
-        locationCacheManager = new LocationCacheManager(this);
         zoneSetupManager = new ZoneSetupManager(this);
         hologramManager = new HologramManager(this);
         rtpZoneManager = new RTPZoneManager(this);
+        zoneSyncManager = new ZoneSyncManager(this);
+        addonManager = new AddonManager(this);
+
+        locationCacheManager = new LocationCacheManager(this);
 
         commandManager.registerCommands();
         registerZoneCommands();
-        getServer().getPluginManager().registerEvents(new PlayerListener(this), this);
+        playerListener = new PlayerListener(this);
+        getServer().getPluginManager().registerEvents(playerListener, this);
         getServer().getPluginManager().registerEvents(new WorldListener(this), this);
 
         versionChecker = new VersionChecker(this);
-
         foliaScheduler.runLater(() -> {
             hologramManager.initialize();
+            
+            if (!hologramManager.isUsingPacketEvents()) {
+                getLogger().info("┌────────────────────────────────────────────────────────────┐");
+                getLogger().info("│  💡 RECOMMENDATION: Install PacketEvents                   │");
+                getLogger().info("│                                                            │");
+                getLogger().info("│  PacketEvents provides high-performance packet-based       │");
+                getLogger().info("│  holograms that are more efficient and have better         │");
+                getLogger().info("│  compatibility with Folia multi-threaded regions.          │");
+                getLogger().info("│                                                            │");
+                getLogger().info("│  Download: https://modrinth.com/plugin/packetevents       │");
+                getLogger().info("│  Current: Using entity-based holograms (Display entities) │");
+                getLogger().info("└────────────────────────────────────────────────────────────┘");
+            }
+            
             hologramManager.cleanupAllHolograms();
             rtpZoneManager.loadZones();
             locationCacheManager.initialize();
+            zoneSyncManager.initialize();
+            addonManager.loadAddons();
             StartupMessage.sendStartupMessage(this);
             versionChecker.check();
 
             for (Player player : getServer().getOnlinePlayers()) {
                 rtpZoneManager.handlePlayerMove(player, player.getLocation());
             }
+            
+            startServerWorldsHeartbeat();
         }, 1L);
 
         if (getConfig().getBoolean("bstats.enabled", true)) {
@@ -132,6 +162,7 @@ public final class JustRTP extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        if(addonManager != null) addonManager.disableAddons();
         if(rtpZoneManager != null) rtpZoneManager.shutdownAllTasks();
         if(effectsManager != null) effectsManager.removeAllBossBars();
         if (databaseManager != null && databaseManager.isConnected()) {
@@ -244,5 +275,54 @@ public final class JustRTP extends JavaPlugin {
     public RTPZoneManager getRtpZoneManager() { return rtpZoneManager; }
     public ZoneSetupManager getZoneSetupManager() { return zoneSetupManager; }
     public HologramManager getHologramManager() { return hologramManager; }
+    public ZoneSyncManager getZoneSyncManager() { return zoneSyncManager; }
     public VersionChecker getVersionChecker() { return versionChecker; }
+    public AddonManager getAddonManager() { return addonManager; }
+    
+    private DataManager dataManager;
+    public DataManager getDataManager() { 
+        if (dataManager == null) {
+            dataManager = new DataManager(this);
+        }
+        return dataManager; 
+    }
+    
+    private PlayerListener playerListener;
+    public PlayerListener getPlayerListener() { 
+        return playerListener;
+    }
+    
+    public void setPlayerListener(PlayerListener listener) {
+        this.playerListener = listener;
+    }
+    
+    private void startServerWorldsHeartbeat() {
+        if (!configManager.isProxyMySqlEnabled() || databaseManager == null || !databaseManager.isConnected()) {
+            debug("Server worlds heartbeat disabled (MySQL not configured)");
+            return;
+        }
+        
+        String thisServer = configManager.getProxyThisServerName();
+        if (thisServer == null || thisServer.isEmpty() || thisServer.equals("server-name")) {
+            getLogger().warning("Cannot start server worlds heartbeat: 'this_server_name' not configured");
+            return;
+        }
+        
+        updateServerWorldsList();
+        
+        foliaScheduler.runTimer(() -> updateServerWorldsList(), 2400L, 2400L);
+        
+        debug("Server worlds heartbeat started for server: " + thisServer);
+    }
+    
+    private void updateServerWorldsList() {
+        String thisServer = configManager.getProxyThisServerName();
+        List<World> worlds = new ArrayList<>(getServer().getWorlds());
+        
+        databaseManager.updateServerWorlds(thisServer, worlds)
+            .exceptionally(ex -> {
+                debug("Failed to update server worlds: " + ex.getMessage());
+                return null;
+            });
+    }
 }

@@ -1,8 +1,8 @@
 # ----------------------------------------------------------------
-# JustRTP Command Alias Configuration
+# JustRTP Commands Configuration
 # ----------------------------------------------------------------
 # CONFIG VERSION - DO NOT CHANGE THIS
-config-version: 1
+config-version: 4
 # ----------------------------------------------------------------
 #
 # Enable or disable command aliases here.

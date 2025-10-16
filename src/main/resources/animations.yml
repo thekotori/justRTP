@@ -2,7 +2,7 @@
 # JustRTP Animation Engine by kotori
 # ----------------------------------------------------------------
 # CONFIG VERSION - DO NOT CHANGE THIS
-config-version: 1
+config-version: 2
 # ----------------------------------------------------------------
 #
 # Create your own custom particle animations here.
@@ -53,3 +53,15 @@ animations:
   heart_pulse:
     steps:
       - { particle: "HEART", shape: "POINT", count: 5, offset: { y: 2.2 } }
+
+  # Orbital particles during delay (default delay animation)
+  orbit_delay:
+    steps:
+      - { particle: "ENCHANTMENT_TABLE", shape: "CIRCLE", radius: 1.2, count: 20, offset: { y: 1.0 } }
+      - { particle: "ENCHANTMENT_TABLE", shape: "CIRCLE", radius: 1.1, count: 20, offset: { y: 1.1 } }
+      - { particle: "ENCHANTMENT_TABLE", shape: "CIRCLE", radius: 1.0, count: 20, offset: { y: 1.2 } }
+
+  # Burst effect on successful teleport (default success animation)
+  burst_success:
+    steps:
+      - { particle: "FIREWORKS_SPARK", shape: "SPHERE", radius: 1.5, count: 50 }

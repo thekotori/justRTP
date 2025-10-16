@@ -8,28 +8,46 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import java.io.File;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
 
 public class LocaleManager {
     private final JustRTP plugin;
     private FileConfiguration messagesConfig;
     private final MiniMessage miniMessage = MiniMessage.miniMessage();
+    private File messagesFile;
+    private final Set<String> warnedMissingKeys = Collections.synchronizedSet(new HashSet<>());
+    
     public LocaleManager(JustRTP plugin) {
         this.plugin = plugin;
         loadMessages();
     }
+    
     public void loadMessages() {
-        File messagesFile = new File(plugin.getDataFolder(), "messages.yml");
+        messagesFile = new File(plugin.getDataFolder(), "messages.yml");
         if (!messagesFile.exists()) {
             plugin.saveResource("messages.yml", false);
         }
         messagesConfig = YamlConfiguration.loadConfiguration(messagesFile);
+        
+        warnedMissingKeys.clear();
     }
     public void sendMessage(CommandSender sender, String path, TagResolver... resolvers) {
-        String message = getRawMessage(path, "<red>Message not found: " + path + "</red>");
-        if (message == null || message.isBlank()) return;
+        String message = messagesConfig.getString(path);
+        
+        if (message == null || message.isEmpty()) {
+            if (!warnedMissingKeys.contains(path)) {
+                warnedMissingKeys.add(path);
+                plugin.getLogger().warning("Missing message key: '" + path + "' - Please check messages.yml");
+            }
+            
+            message = "<red>Message not found: " + path + "</red>";
+        }
+        
+        if (message.isBlank()) return;
+        
         String prefix = getRawMessage("prefix", "");
         message = message.replace("%prefix%", prefix);
         Component parsedComponent = miniMessage.deserialize(message, resolvers);

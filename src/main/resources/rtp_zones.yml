@@ -1,8 +1,8 @@
 # ----------------------------------------------------------------
-# JustRTP Zone Configuration
+# JustRTP Zones Configuration
 # ----------------------------------------------------------------
 # CONFIG VERSION - DO NOT CHANGE THIS
-config-version: 6
+config-version: 10
 # ----------------------------------------------------------------
 #
 # This file stores the configurations for your RTP zones.
@@ -107,3 +107,19 @@ zones:
 #        y: 74.5
 #        z: 227.5
 #      view-distance: 64
+
+# --- Zone Synchronization Metadata ---
+# This section is automatically managed by the zone sync system.
+# DO NOT manually edit unless you know what you're doing.
+sync-metadata:
+  # Last time zones were synced with other servers (Unix timestamp)
+  last-sync-time: 0
+  
+  # Server that last updated the zone configuration
+  last-sync-server: ""
+  
+  # Current sync version (increments with each change)
+  sync-version: 0
+  
+  # Hash of current zone configuration for change detection
+  config-hash: ""

@@ -3,6 +3,7 @@ package eu.kotori.justRTP.handlers;
 import eu.kotori.justRTP.JustRTP;
 import eu.kotori.justRTP.handlers.hooks.HookManager;
 import eu.kotori.justRTP.managers.ConfigManager;
+import eu.kotori.justRTP.utils.SafetyValidator;
 import io.papermc.lib.PaperLib;
 import org.bukkit.*;
 import org.bukkit.block.Biome;
@@ -39,6 +40,7 @@ public class RTPService {
     private final HookManager hookManager;
     private EnumSet<Material> blacklistedBlocks;
     private final Map<String, WorldType> worldTypes = new HashMap<>();
+    private final Set<String> borderWarningShown = new HashSet<>(); 
 
     private String worldMode;
     private Set<String> worldList;
@@ -100,13 +102,25 @@ public class RTPService {
 
     public CompletableFuture<Optional<Location>> findSafeLocationForCache(World world) {
         boolean generateChunks = plugin.getConfigManager().shouldGenerateChunks(world);
-        int attempts = plugin.getConfig().getInt("settings.attempts", 25);
+        int attempts = getDimensionAttempts(world);
         return findLocationAsync(null, world, attempts, Optional.empty(), Optional.empty(), generateChunks);
     }
 
     public CompletableFuture<Optional<Location>> findSafeLocation(Player player, World world, int attempts, Optional<Integer> minRadius, Optional<Integer> maxRadius) {
         boolean generateChunks = plugin.getConfigManager().shouldGenerateChunks(world);
-        return findLocationAsync(player, world, attempts, minRadius, maxRadius, generateChunks);
+        int finalAttempts = (attempts > 0) ? attempts : getDimensionAttempts(world);
+        return findLocationAsync(player, world, finalAttempts, minRadius, maxRadius, generateChunks);
+    }
+    
+    private int getDimensionAttempts(World world) {
+        World.Environment env = world.getEnvironment();
+        if (env == World.Environment.NETHER) {
+            return plugin.getConfig().getInt("settings.attempts_nether", 50);
+        } else if (env == World.Environment.THE_END) {
+            return plugin.getConfig().getInt("settings.attempts_end", 35);
+        } else {
+            return plugin.getConfig().getInt("settings.attempts", 25);
+        }
     }
 
     private CompletableFuture<Optional<Location>> findLocationAsync(Player player, World world, int attemptsLeft, Optional<Integer> minRadius, Optional<Integer> maxRadius, boolean generateChunks) {
@@ -116,7 +130,11 @@ public class RTPService {
 
     private CompletableFuture<Optional<Location>> findLocationRecursive(Player player, World world, int attemptsLeft, Optional<Integer> minRadius, Optional<Integer> maxRadius, boolean generateChunks, SearchSummary summary) {
         if (attemptsLeft <= 0) {
-            plugin.debug("findSafeLocation ran out of attempts for world " + world.getName() + ". Failure summary: " + summary);
+            int totalAttempts = getDimensionAttempts(world);
+            String worldType = world.getEnvironment().name();
+            plugin.getLogger().warning("Failed to find safe location in " + world.getName() + " (" + worldType + ") after " + totalAttempts + " attempts.");
+            plugin.getLogger().warning("Failure breakdown: " + summary);
+            plugin.getLogger().warning("Check world configuration, chunk generation settings, and world_types in config.yml");
             return CompletableFuture.completedFuture(Optional.empty());
         }
 
@@ -124,7 +142,16 @@ public class RTPService {
         double borderSize = border.getSize() / 2;
         Location borderCenter = border.getCenter();
 
-        double initialMaxR = Math.min(borderSize, maxRadius.orElse(config.getInt(player, world, "max_radius", (int) borderSize)));
+        final double ABSOLUTE_MAX_RADIUS = 10_000_000;
+        final double SAFE_BORDER_SIZE = Math.min(borderSize, ABSOLUTE_MAX_RADIUS);
+        
+        if (borderSize > ABSOLUTE_MAX_RADIUS && !borderWarningShown.contains(world.getName())) {
+            borderWarningShown.add(world.getName());
+            plugin.getLogger().warning("World border for '" + world.getName() + "' is extremely large (" + borderSize + " blocks)!");
+            plugin.getLogger().warning("Limiting RTP radius to " + ABSOLUTE_MAX_RADIUS + " blocks to prevent server crashes.");
+        }
+
+        double initialMaxR = Math.min(SAFE_BORDER_SIZE, maxRadius.orElse(config.getInt(player, world, "max_radius", (int) SAFE_BORDER_SIZE)));
         double initialMinR = minRadius.orElse(config.getInt(player, world, "min_radius", 100));
 
         final double finalMinRadius = Math.min(initialMinR, initialMaxR);
@@ -137,14 +164,57 @@ public class RTPService {
         double angle = ThreadLocalRandom.current().nextDouble(2 * Math.PI);
         double radius = Math.sqrt(ThreadLocalRandom.current().nextDouble()) * (finalMaxRadius - finalMinRadius) + finalMinRadius;
 
-        final int x = (int) Math.max(borderCenter.getX() - borderSize, Math.min(borderCenter.getX() + borderSize, cX + radius * Math.cos(angle)));
-        final int z = (int) Math.max(borderCenter.getZ() - borderSize, Math.min(borderCenter.getZ() + borderSize, cZ + radius * Math.sin(angle)));
+        double targetX = cX + radius * Math.cos(angle);
+        double targetZ = cZ + radius * Math.sin(angle);
+        
+        final int x = (int) Math.max(borderCenter.getX() - SAFE_BORDER_SIZE, Math.min(borderCenter.getX() + SAFE_BORDER_SIZE, targetX));
+        final int z = (int) Math.max(borderCenter.getZ() - SAFE_BORDER_SIZE, Math.min(borderCenter.getZ() + SAFE_BORDER_SIZE, targetZ));
+        
+        final int MAX_COORDINATE = 10_000_000;
+        if (Math.abs(x) > MAX_COORDINATE || Math.abs(z) > MAX_COORDINATE) {
+            plugin.getLogger().severe("╔════════════════════════════════════════════════════════════╗");
+            plugin.getLogger().severe("║  CRITICAL: Extreme coordinates detected!                  ║");
+            plugin.getLogger().severe("║  X=" + x + ", Z=" + z + "                                  ║");
+            plugin.getLogger().severe("║  This would cause chunk loading to freeze the server!     ║");
+            plugin.getLogger().severe("║  Retrying with safer coordinates...                       ║");
+            plugin.getLogger().severe("╚════════════════════════════════════════════════════════════╝");
+            return findLocationRecursive(player, world, attemptsLeft - 1, minRadius, maxRadius, generateChunks, summary);
+        }
 
         return PaperLib.getChunkAtAsync(world, x >> 4, z >> 4, generateChunks).thenCompose(chunk -> {
             if (chunk == null) {
+                plugin.getLogger().warning("Failed to load chunk at " + (x >> 4) + ", " + (z >> 4) + " in " + world.getName() + " (generateChunks=" + generateChunks + ")");
+                summary.increment(FailureReason.UNKNOWN);
+                
+                int totalAttempts = getDimensionAttempts(world);
+                int attemptsMade = totalAttempts - attemptsLeft + 1;
+                if (attemptsMade % 10 == 0) {
+                    plugin.getLogger().warning("Chunk loading failures in " + world.getName() + " after " + attemptsMade + " attempts. Check world configuration!");
+                }
+                
                 return findLocationRecursive(player, world, attemptsLeft - 1, minRadius, maxRadius, generateChunks, summary);
             }
-            WorldType type = worldTypes.getOrDefault(world.getName(), WorldType.NORMAL);
+            
+            WorldType type = worldTypes.get(world.getName());
+            if (type == null) {
+                if (world.getEnvironment() == World.Environment.NETHER) {
+                    type = WorldType.NETHER;
+                    plugin.getLogger().info("[NETHER DETECTION] Auto-detected NETHER environment for world '" + world.getName() + "' - Y < 127 enforcement ACTIVE");
+                } else if (world.getEnvironment() == World.Environment.THE_END) {
+                    type = WorldType.THE_END;
+                    plugin.debug("Auto-detected THE_END environment for " + world.getName());
+                } else {
+                    type = WorldType.NORMAL;
+                }
+            } else {
+                plugin.getLogger().info("[WORLD TYPE] Using configured WorldType." + type + " for world '" + world.getName() + "'");
+            }
+            
+            if (world.getEnvironment() == World.Environment.NETHER && type != WorldType.NETHER) {
+                plugin.getLogger().warning("[NETHER OVERRIDE] World '" + world.getName() + "' has NETHER environment but type was " + type + " - FORCING to NETHER for safety!");
+                type = WorldType.NETHER;
+            }
+            
             Optional<Location> safeSpot;
             switch(type) {
                 case NETHER:
@@ -159,7 +229,60 @@ public class RTPService {
             }
 
             if (safeSpot.isPresent()) {
-                plugin.debug("Success: Found safe location at " + safeSpot.get().getBlockX() + "," + safeSpot.get().getBlockY() + "," + safeSpot.get().getBlockZ() + " after " + (plugin.getConfig().getInt("settings.attempts", 25) - attemptsLeft + 1) + " attempts.");
+                Location loc = safeSpot.get();
+                
+                if (!SafetyValidator.isLocationAbsolutelySafe(loc)) {
+                    String reason = SafetyValidator.getUnsafeReason(loc);
+                    plugin.getLogger().severe("╔════════════════════════════════════════════════════════════╗");
+                    plugin.getLogger().severe("║  SAFETY VALIDATOR REJECTED LOCATION!                      ║");
+                    plugin.getLogger().severe("║  World: " + world.getName() + " (" + world.getEnvironment() + ")    ║");
+                    plugin.getLogger().severe("║  Location: " + loc.getBlockX() + "," + loc.getBlockY() + "," + loc.getBlockZ() + "  ║");
+                    plugin.getLogger().severe("║  Reason: " + reason + "                                   ║");
+                    plugin.getLogger().severe("║  Retrying with different location...                      ║");
+                    plugin.getLogger().severe("╚════════════════════════════════════════════════════════════╝");
+                    summary.increment(FailureReason.UNKNOWN);
+                    return findLocationRecursive(player, world, attemptsLeft - 1, minRadius, maxRadius, generateChunks, summary);
+                }
+                
+                boolean isNetherWorld = (type == WorldType.NETHER) || (world.getEnvironment() == World.Environment.NETHER);
+                
+                if (isNetherWorld) {
+                    double y = loc.getY();
+                    if (y >= 126.0) {
+                        plugin.getLogger().severe("╔════════════════════════════════════════════════════════════╗");
+                        plugin.getLogger().severe("║  CRITICAL NETHER ROOF SPAWN PREVENTED!                    ║");
+                        plugin.getLogger().severe("║  Location rejected: Y=" + y + " >= 126                    ║");
+                        plugin.getLogger().severe("║  World: " + world.getName() + " (Type: " + type + ", Env: " + world.getEnvironment() + ") ║");
+                        plugin.getLogger().severe("║  Head would be at: Y=" + (y + 1) + " (NETHER CEILING!)           ║");
+                        plugin.getLogger().severe("║  Continuing search for safe location...                   ║");
+                        plugin.getLogger().severe("╚════════════════════════════════════════════════════════════╝");
+                        summary.increment(FailureReason.UNKNOWN);
+                        return findLocationRecursive(player, world, attemptsLeft - 1, minRadius, maxRadius, generateChunks, summary);
+                    }
+                    plugin.getLogger().info("[NETHER SAFE] ✓ Nether location verified safe: Y=" + y + " (head at Y=" + (y + 1) + ") in " + world.getName());
+                }
+                
+                if (world.getEnvironment() == World.Environment.THE_END) {
+                    double y = loc.getY();
+                    if (y < 10 || y > 120) {
+                        plugin.getLogger().warning("[END SAFETY] Rejected Y=" + y + " (out of safe range 10-120)");
+                        summary.increment(FailureReason.UNKNOWN);
+                        return findLocationRecursive(player, world, attemptsLeft - 1, minRadius, maxRadius, generateChunks, summary);
+                    }
+                    plugin.debug("[END SAFE] ✓ End location verified safe: Y=" + y + " in " + world.getName());
+                }
+                
+                if (world.getEnvironment() == World.Environment.NORMAL) {
+                    double y = loc.getY();
+                    if (y >= 127 || y < world.getMinHeight() + 5) {
+                        plugin.getLogger().warning("[OVERWORLD SAFETY] Rejected Y=" + y + " (invalid height)");
+                        summary.increment(FailureReason.UNKNOWN);
+                        return findLocationRecursive(player, world, attemptsLeft - 1, minRadius, maxRadius, generateChunks, summary);
+                    }
+                    plugin.debug("[OVERWORLD SAFE] ✓ Overworld location verified safe: Y=" + y + " in " + world.getName());
+                }
+                
+                plugin.debug("Success: Found safe location at " + loc.getBlockX() + "," + loc.getBlockY() + "," + loc.getBlockZ() + " after " + (getDimensionAttempts(world) - attemptsLeft + 1) + " attempts.");
                 return CompletableFuture.completedFuture(safeSpot);
             }
             return findLocationRecursive(player, world, attemptsLeft - 1, minRadius, maxRadius, generateChunks, summary);
@@ -167,43 +290,174 @@ public class RTPService {
     }
 
     private Optional<Location> findSafeInNormal(Chunk chunk, int x, int z, SearchSummary summary) {
-        int y = chunk.getWorld().getHighestBlockYAt(x, z, HeightMap.MOTION_BLOCKING_NO_LEAVES);
-        if (y <= chunk.getWorld().getMinHeight()) return Optional.empty();
-        Location loc = new Location(chunk.getWorld(), x, y, z);
-        if (isSafe(loc, summary).isEmpty()) return Optional.of(loc.add(0.5, 1.5, 0.5));
+        if (chunk.getWorld().getEnvironment() == World.Environment.NETHER) {
+            plugin.getLogger().severe("╔══════════════════════════════════════════════════════════╗");
+            plugin.getLogger().severe("║  CRITICAL BUG: findSafeInNormal() called for NETHER!   ║");
+            plugin.getLogger().severe("║  World: " + chunk.getWorld().getName() + "                              ║");
+            plugin.getLogger().severe("║  Redirecting to findSafeInNether() for safety!          ║");
+            plugin.getLogger().severe("╚══════════════════════════════════════════════════════════╝");
+            return findSafeInNether(chunk, x, z, summary);
+        }
+        
+        int groundY = chunk.getWorld().getHighestBlockYAt(x, z, HeightMap.MOTION_BLOCKING_NO_LEAVES);
+        if (groundY <= chunk.getWorld().getMinHeight()) {
+            plugin.debug("No valid ground found at " + x + ", " + z + " in " + chunk.getWorld().getName());
+            return Optional.empty();
+        }
+        
+        if (groundY >= 127) {
+            plugin.getLogger().warning("[SAFETY] findSafeInNormal() found groundY=" + groundY + " >= 127 in " + 
+                                     chunk.getWorld().getName() + " - rejecting for safety");
+            summary.increment(FailureReason.UNKNOWN);
+            return Optional.empty();
+        }
+        
+        Location groundLoc = new Location(chunk.getWorld(), x, groundY, z);
+        
+        if (isSafe(groundLoc, summary).isEmpty()) {
+            Location spawnLoc = new Location(chunk.getWorld(), x + 0.5, groundY + 1, z + 0.5);
+            
+            if (spawnLoc.getY() >= 127.0) {
+                plugin.getLogger().severe("[CRITICAL SAFETY] findSafeInNormal() would spawn at Y=" + spawnLoc.getY() + 
+                                        " >= 127! Rejecting to prevent nether ceiling spawn.");
+                summary.increment(FailureReason.UNKNOWN);
+                return Optional.empty();
+            }
+            
+            plugin.debug("Found safe overworld spawn at Y=" + spawnLoc.getY() + " (ground at Y=" + groundY + ")");
+            return Optional.of(spawnLoc);
+        }
         return Optional.empty();
     }
 
     private Optional<Location> findSafeInNether(Chunk chunk, int x, int z, SearchSummary summary) {
-        for (int y = 120; y > chunk.getWorld().getMinHeight() + 5; y--) {
+        
+        String worldName = chunk.getWorld().getName();
+        plugin.getLogger().info("[NETHER SEARCH] Starting nether location search in '" + worldName + "' at X=" + x + " Z=" + z);
+        
+        int minHeight = Math.max(chunk.getWorld().getMinHeight(), 5); 
+        int maxSearchY = 120; 
+        int searchAttempts = 0;
+        
+        plugin.debug("[NETHER SEARCH] Search range: Y=" + maxSearchY + " down to Y=" + minHeight + " (total range: " + (maxSearchY - minHeight) + " blocks)");
+        
+        for (int y = maxSearchY; y > minHeight; y--) {
+            searchAttempts++;
+            
+            if (y >= 126) { 
+                plugin.getLogger().severe("CRITICAL: Nether search attempted Y=" + y + " >= 126! Skipping.");
+                continue;
+            }
+            
+            if ((y + 2) >= 127) {
+                continue;
+            }
+            
             Block groundBlock = chunk.getBlock(x & 15, y - 1, z & 15);
             Block feetBlock = chunk.getBlock(x & 15, y, z & 15);
             Block headBlock = chunk.getBlock(x & 15, y + 1, z & 15);
 
             if (groundBlock.getType().isSolid() && feetBlock.getType() == Material.AIR && headBlock.getType() == Material.AIR) {
                 Location loc = groundBlock.getLocation();
-                if (isSafe(loc, summary).isEmpty()) {
-                    return Optional.of(feetBlock.getLocation().add(0.5, 0.5, 0.5));
+                Optional<FailureReason> safetyCheck = isSafe(loc, summary);
+                if (safetyCheck.isEmpty()) {
+                    Location safeLocation = feetBlock.getLocation().add(0.5, 0.5, 0.5);
+                    
+                    double finalY = safeLocation.getY();
+                    if (finalY >= 126.0) {
+                        plugin.getLogger().severe("CRITICAL BUG DETECTED: findSafeInNether generated Y=" + finalY + " >= 126!");
+                        plugin.getLogger().severe("This location would put player head at Y=" + (finalY + 1) + " (NETHER CEILING!)");
+                        plugin.getLogger().severe("Rejecting location and continuing search.");
+                        continue;
+                    }
+                    
+                    if (finalY + 1.0 >= 127.0) {
+                        plugin.getLogger().severe("CRITICAL: Player head would be at Y=" + (finalY + 1.0) + " >= 127!");
+                        continue;
+                    }
+                    
+                    plugin.debug("Found safe nether location at Y=" + finalY + " (head at Y=" + (finalY + 1) + ") after " + searchAttempts + " attempts");
+                    return Optional.of(safeLocation);
                 }
             }
         }
+        
+        plugin.debug("No safe nether location found after " + searchAttempts + " Y-level checks (Y=" + maxSearchY + " down to Y=" + minHeight + ")");
+        summary.increment(FailureReason.UNKNOWN);
         return Optional.empty();
     }
 
     private Optional<Location> findSafeInEnd(Chunk chunk, int x, int z, SearchSummary summary) {
-        for (int y = chunk.getWorld().getMaxHeight() -1; y > chunk.getWorld().getMinHeight(); y--) {
+        World world = chunk.getWorld();
+        String worldName = world.getName();
+        
+        plugin.debug("[END SEARCH] Starting End location search in '" + worldName + "' at X=" + x + " Z=" + z);
+        
+        int maxSearchY = Math.min(120, world.getMaxHeight() - 1);
+        int minSearchY = Math.max(10, world.getMinHeight() + 1);
+        int searchAttempts = 0;
+        
+        plugin.debug("[END SEARCH] Search range: Y=" + maxSearchY + " down to Y=" + minSearchY);
+        
+        for (int y = maxSearchY; y > minSearchY; y--) {
+            searchAttempts++;
+            
+            if (y < 10 || y > 120) {
+                continue;
+            }
+            
             Block groundBlock = chunk.getBlock(x & 15, y - 1, z & 15);
-            if (groundBlock.getType().isSolid()) {
-                Block feetBlock = chunk.getBlock(x & 15, y, z & 15);
-                Block headBlock = chunk.getBlock(x & 15, y + 1, z & 15);
-                if(feetBlock.getType().isAir() && headBlock.getType().isAir()) {
-                    Location loc = groundBlock.getLocation();
-                    if (isSafe(loc, summary).isEmpty()) {
-                        return Optional.of(feetBlock.getLocation().add(0.5, 0.5, 0.5));
+            
+            Material groundType = groundBlock.getType();
+            if (!groundType.isSolid()) {
+                continue;
+            }
+            
+            if (groundType != Material.END_STONE && 
+                groundType != Material.OBSIDIAN && 
+                groundType != Material.END_STONE_BRICKS &&
+                groundType != Material.PURPUR_BLOCK) {
+                plugin.debug("[END SEARCH] Found non-standard ground type: " + groundType + " at Y=" + y);
+            }
+            
+            Block feetBlock = chunk.getBlock(x & 15, y, z & 15);
+            Block headBlock = chunk.getBlock(x & 15, y + 1, z & 15);
+            
+            if(feetBlock.getType().isAir() && headBlock.getType().isAir()) {
+                Location loc = groundBlock.getLocation();
+                Optional<FailureReason> safetyCheck = isSafe(loc, summary);
+                
+                if (safetyCheck.isEmpty()) {
+                    Location safeLocation = feetBlock.getLocation().add(0.5, 0.5, 0.5);
+                    
+                    double finalY = safeLocation.getY();
+                    if (finalY < 10.0 || finalY > 120.0) {
+                        plugin.getLogger().warning("[END SAFETY] Generated unsafe Y=" + finalY + " - rejecting");
+                        continue;
                     }
+                    
+                    boolean hasGroundBelow = false;
+                    for (int checkY = y - 2; checkY > Math.max(0, y - 10); checkY--) {
+                        Block checkBlock = chunk.getBlock(x & 15, checkY, z & 15);
+                        if (checkBlock.getType().isSolid()) {
+                            hasGroundBelow = true;
+                            break;
+                        }
+                    }
+                    
+                    if (!hasGroundBelow) {
+                        plugin.debug("[END SEARCH] No ground below Y=" + y + " - may be floating");
+                        continue;
+                    }
+                    
+                    plugin.debug("[END SEARCH] Found safe End location at Y=" + finalY + " (" + groundType + ") after " + searchAttempts + " attempts");
+                    return Optional.of(safeLocation);
                 }
             }
         }
+        
+        plugin.debug("[END SEARCH] No safe End location found after " + searchAttempts + " Y-level checks");
+        summary.increment(FailureReason.UNKNOWN);
         return Optional.empty();
     }
 

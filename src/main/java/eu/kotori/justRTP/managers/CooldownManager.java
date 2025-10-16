@@ -21,9 +21,10 @@ public class CooldownManager {
     }
 
     public long getRemaining(UUID uuid) {
-        if (!cooldowns.containsKey(uuid) || cooldowns.get(uuid) <= System.currentTimeMillis()) {
+        Long expiryTime = cooldowns.get(uuid);
+        if (expiryTime == null || expiryTime <= System.currentTimeMillis()) {
             return 0;
         }
-        return TimeUnit.MILLISECONDS.toSeconds(cooldowns.get(uuid) - System.currentTimeMillis());
+        return TimeUnit.MILLISECONDS.toSeconds(expiryTime - System.currentTimeMillis());
     }
 }

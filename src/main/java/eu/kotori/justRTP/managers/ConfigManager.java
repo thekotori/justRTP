@@ -144,4 +144,36 @@ public class ConfigManager {
     public boolean shouldGenerateChunks(World world) {
         return plugin.getConfig().getBoolean("location_cache.worlds." + world.getName() + ".generate_chunks", false);
     }
+
+    public boolean isZoneSyncEnabled() {
+        return plugin.getConfig().getBoolean("proxy.zone_sync.enabled", false);
+    }
+
+    public boolean isRedisPubSubEnabled() {
+        return plugin.getConfig().getBoolean("redis.performance.enable-pubsub", false);
+    }
+
+    public int getZoneSyncInterval() {
+        return plugin.getConfig().getInt("proxy.zone_sync.sync_interval", 10);
+    }
+
+    public String getZoneSyncMode() {
+        return plugin.getConfig().getString("proxy.zone_sync.mode", "PULL");
+    }
+
+    public boolean isZoneSyncAutoReload() {
+        return plugin.getConfig().getBoolean("proxy.zone_sync.auto_reload", true);
+    }
+
+    public boolean isZoneSyncNotifyEnabled() {
+        return plugin.getConfig().getBoolean("proxy.zone_sync.notify_sync", true);
+    }
+
+    public String getZoneSyncStorage() {
+        return plugin.getConfig().getString("proxy.zone_sync.storage", "BOTH");
+    }
+
+    public boolean isRedisEnabled() {
+        return plugin.getConfig().getBoolean("redis.enabled", false);
+    }
 }

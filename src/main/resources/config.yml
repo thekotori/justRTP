@@ -1,8 +1,8 @@
 # ----------------------------------------------------------------
-# JustRTP Main Configuration
+# JustRTP Configuration
 # ----------------------------------------------------------------
 # CONFIG VERSION - DO NOT CHANGE THIS
-config-version: 15
+config-version: 22
 # ----------------------------------------------------------------
 
 settings:
@@ -17,6 +17,11 @@ settings:
   # The maximum number of times the plugin will try to find a safe location if the cache is empty.
   # Higher values may increase the chance of finding a location but can use more server resources.
   attempts: 25
+  
+  # Dimension-specific attempt counts (overrides default attempts)
+  # Nether and End require more attempts due to complex terrain
+  attempts_nether: 50  # Nether caves are harder to find
+  attempts_end: 35     # End islands are scattered
 
   # Should the plugin check for region claims from other plugins (e.g., WorldGuard)?
   # If true, players will not be teleported into claimed areas.
@@ -25,7 +30,7 @@ settings:
 
   # Enable debug mode to print detailed information to the console.
   # This is useful for troubleshooting but can be very spammy.
-  debug: false
+  debug: true
 
   # Should the /rtp credits command require the "justrtp.command.credits" permission?
   # If false, anyone can use the command.
@@ -80,6 +85,21 @@ rtp_settings:
   world_aliases:
     "End": "world_the_end"
     "Mining": "world_resource"
+
+# --- World Type Configuration ---
+# Override automatic world type detection for custom dimensions
+# Valid Types: NORMAL (overworld), NETHER (Y < 127), THE_END (void worlds)
+# Auto-detection: Plugin automatically detects based on World.Environment
+# Manual config: Only needed for custom dimension names or override
+#
+# WARNING: For cross-server nether RTP, configure world_types on TARGET server!
+# Example: /rtp lobby2:world_nether requires lobby2 to have world_nether: "NETHER"
+world_types:
+  world: "NORMAL"
+  world_nether: "NETHER"      # Standard nether (Y < 127 enforced)
+  world_the_end: "THE_END"    # Standard end world
+  # custom_nether: "NETHER"   # Custom nether dimension
+  # mining_world: "NORMAL"    # Custom overworld
 
 # --- Location Caching System ---
 # This system dramatically improves performance by finding safe locations in advance.
@@ -179,26 +199,117 @@ performance:
   # Increasing this can significantly speed up teleports on busy servers.
   queue_batch_size: 5
 
-# --- Proxy & Cross-Server Settings ---
-# For this to work, you need a Velocity/BungeeCord proxy and a shared MySQL database.
+# --- Cross-Server RTP (Proxy) ---
+# Requirements: Velocity/BungeeCord/Waterfall + MySQL (mysql.yml) on ALL servers
+# Redis (redis.yml) is OPTIONAL but recommended for better performance
+#
+# ⚠️ IMPORTANT: Command Format Guide
+# 
+# Local RTP (same server):
+#   /rtp                    - Current world
+#   /rtp world_nether       - Specific world (NO server prefix)
+#   /rtp world_the_end      - Another world (NO server prefix)
+# 
+# Cross-Server RTP (different server):
+#   /rtp lobby2:world_nether  - world_nether on lobby2 server
+#   /rtp lobby2               - Default world on lobby2
+#   /rtp factions:world       - world on factions server
+# 
+# ❌ WRONG: /rtp lobby2:world_nether (when already on lobby2)
+# ✓ CORRECT: /rtp world_nether (when on lobby2)
+#
+# 💡 TIP: Type /rtp help in-game for detailed guide!
 proxy:
-  # Set to true to enable cross-server /rtp functionality (e.g., /rtp world).
+  # Set to true to enable cross-server /rtp functionality.
   # This requires a correctly configured mysql.yml on ALL Spigot/Paper servers.
+  # Redis configuration (redis.yml) is OPTIONAL but recommended for optimal performance.
+  # The plugin will work perfectly fine without Redis using MySQL + memory fallback.
   enabled: false
 
   # The name of THIS server as defined in your proxy's configuration (e.g., velocity.toml).
-  # THIS MUST BE SET ACCURATELY FOR PROXY FEATURES TO WORK. It is case-sensitive.
+  # WARNING: THIS MUST BE SET ACCURATELY FOR PROXY FEATURES TO WORK - it is case-sensitive!
+  # Example: If this is "lobby" in velocity.toml, set it to "lobby" here.
   this_server_name: "lobby"
 
   # If a player uses /rtp <server>, they are first sent to that server and then teleported.
   # If this is true, the teleport delay (warmup) will be skipped for players arriving from another server.
   cross_server_rtp_no_delay: true
 
+  # If true, players will spawn directly at their RTP location instead of at server spawn first.
+  # This prevents multiple players from briefly appearing at the same spawn point during cross-server teleports.
+  instant_spawn_location: true
+  
+  # Maximum time (in seconds) to wait for cross-server location finding.
+  # Increased to 90s to allow enough time for:
+  #  - MySQL polling every 2 seconds
+  #  - Target server finding safe location (up to 50 attempts for nether)
+  #  - Network latency between servers
+  # If location not found within this time, request is cancelled and cooldown reset.
+  timeout_seconds: 90
+
   # A list of ALL servers that players can RTP to from this server.
   # These names must exactly match the server names in your proxy's configuration.
   servers:
+    - "lobby2"
     - "world"
     - "factions"
+
+# --- Redis Integration ---
+# Redis provides high-performance caching and real-time cross-server communication.
+# Configure redis.yml for detailed Redis settings.
+redis:
+  # Set to true to enable Redis integration for enhanced performance.
+  # Redis will be used for cooldowns, delays, location cache, and cross-server data.
+  # Falls back to memory storage if Redis is unavailable.
+  enabled: false
+
+  # Data types to store in Redis (can be individually controlled in redis.yml)
+  storage-types:
+    # Store player cooldowns in Redis for cross-server persistence
+    cooldowns: true
+    
+    # Store teleport delays in Redis for cross-server coordination
+    delays: true
+    
+    # Store location cache in Redis for improved performance
+    location-cache: true
+    
+    # Store cross-server teleport requests in Redis for real-time communication
+    teleport-requests: true
+    
+    # Store teleport queue in Redis for load balancing across servers
+    teleport-queue: true
+
+  # Performance settings
+  performance:
+    # Use Redis for real-time cross-server notifications
+    enable-pubsub: true
+    
+    # Cache frequently accessed data locally to reduce Redis calls
+    enable-local-cache: true
+    
+    # Local cache TTL in seconds
+    local-cache-ttl: 30
+
+  # Fallback configuration
+  fallback:
+    # Automatically fall back to memory storage if Redis is unavailable
+    use-memory-fallback: true
+    
+    # Also fall back to MySQL for cross-server features if both Redis and memory fail
+    use-mysql-fallback: true
+
+  # --- RTP Zone Synchronization (Cross-Server Spawn Servers) ---
+  # Synchronize RTP zones across multiple spawn servers so all servers share the same zones.
+  # This is perfect for networks with multiple spawn/lobby servers that need identical zone configurations.
+  zone_sync:
+    enabled: false
+    sync_interval: 10
+    mode: "PULL"
+    master_server: "lobby"
+    storage: "BOTH"
+    auto_reload: true
+    notify_sync: true
 
   # Define user-friendly display names for your servers.
   # If a server name is not listed here, its technical name will be used.
@@ -236,7 +347,7 @@ effects:
 
   boss_bar:
     enabled: true
-    text: "<gradient:#20B2AA:#7FFFD4>JustRTP</gradient> <white>» <gray>Finding a new adventure!</gray>"
+    text: "<gradient:#20B2AA:#7FFFD4>JustRTP</gradient> <white><gray>Finding a new adventure!</gray>"
     color: GREEN # Available: PINK, BLUE, RED, GREEN, YELLOW, PURPLE, WHITE
     style: PROGRESS # Available: PROGRESS, NOTCHED_6, NOTCHED_10, NOTCHED_12, NOTCHED_20
     duration: 5 # Duration in seconds
@@ -247,9 +358,9 @@ effects:
     enabled: true
     messages:
       - ""
-      - "<dark_gray>» <gradient:#20B2AA:#7FFFD4>Wilderness Teleport</gradient>"
-      - "<dark_gray>  ▪ <gray>World:</gray> <color:#7FFFD4><world>"
-      - "<dark_gray>  ▪ <gray>Coordinates:</gray> <color:#7FFFD4><x><gray>, </gray><color:#7FFFD4><y><gray>, </gray><color:#7FFFD4><z>"
+      - "<dark_gray><gradient:#20B2AA:#7FFFD4>Wilderness Teleport</gradient>"
+      - "<dark_gray>  <gray>World:</gray> <color:#7FFFD4><world>"
+      - "<dark_gray>  <gray>Coordinates:</gray> <color:#7FFFD4><x><gray>, </gray><color:#7FFFD4><y><gray>, </gray><color:#7FFFD4><z>"
       - ""
 
   sound:
@@ -314,18 +425,11 @@ blacklist_blocks:
   - "AIR"
   - "CAVE_AIR"
 
-# Define how the safety check behaves in different environments.
-# NORMAL: Uses getHighestBlockAt, suitable for Overworld-like worlds.
-# NETHER: Scans downwards to find caves, suitable for Nether worlds.
-# THE_END: Scans downwards to find islands, avoiding the void. Ideal for The End.
-world_types:
-  world: NORMAL
-  world_nether: NETHER
-  world_the_end: THE_END
-
 # Define custom teleport boundaries for specific worlds.
 # IMPORTANT: max_radius should ALWAYS be smaller than half of your world border size.
+# CRITICAL: Plugin enforces ABSOLUTE MAX of 10,000,000 blocks to prevent server crashes!
 # Check your world border with /worldborder get
+# WARNING: Extremely large radius values (>1 million) can cause chunk loading delays!
 custom_worlds:
   world:
     # Example: If your overworld border is 10,000 x 10,000, the max radius is 5000.
@@ -349,18 +453,19 @@ custom_worlds:
     center_z: 0
 
 # Define special settings for players with specific permissions (e.g., for VIP ranks).
+# Lower priority numbers = higher priority (MVP overrides VIP settings)
 permission_groups:
   enabled: true
   groups:
     vip:
-      priority: 10
+      priority: 20
       worlds:
         world:
           cooldown: 15
           delay: 1
           cost: 0.0
     mvp:
-      priority: 20
+      priority: 10
       worlds:
         world:
           cooldown: 0

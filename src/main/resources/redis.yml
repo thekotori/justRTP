@@ -1,0 +1,126 @@
+# ----------------------------------------------------------------
+# JustRTP Redis Configuration
+# ----------------------------------------------------------------
+# Redis provides high-performance caching and cross-server data synchronization.
+# It can work alongside MySQL or independently for improved performance.
+# Configure this file identically on ALL servers in your network for consistency.
+# ----------------------------------------------------------------
+# CONFIG VERSION - DO NOT CHANGE THIS
+config-version: 3
+# ----------------------------------------------------------------
+
+# Set to true to enable Redis integration for enhanced performance and cross-server features.
+# Redis will be used for cooldowns, delays, location cache, and cross-server communication.
+enabled: false
+
+# Redis server connection settings
+connection:
+  # Redis server host address. Use '127.0.0.1' for localhost.
+  host: 'localhost'
+  # Redis server port. Default is 6379.
+  port: 6379
+  # Redis database number to use (0-15). Different servers can use different databases.
+  database: 0
+  # Redis password. Leave empty if no password is set.
+  password: ''
+  # Connection timeout in milliseconds.
+  timeout: 5000
+  # Enable SSL/TLS connection to Redis (for Redis Cloud, ElastiCache with SSL, etc.)
+  ssl: false
+
+# Redis connection pool settings for optimal performance
+pool-settings:
+  # Maximum number of connections in the pool
+  max-total: 20
+  # Maximum number of idle connections to keep in the pool
+  max-idle: 10
+  # Minimum number of idle connections to maintain
+  min-idle: 2
+  # Maximum time to wait for a connection from the pool (milliseconds)
+  max-wait: 3000
+  # Test connections before use to ensure they're valid
+  test-on-borrow: true
+  # Test idle connections periodically
+  test-while-idle: true
+  # Time between eviction runs (milliseconds)
+  time-between-eviction-runs: 60000
+
+# Data storage configuration - what data to store in Redis
+storage:
+  # Player cooldowns - highly recommended for cross-server setups
+  cooldowns:
+    enabled: true
+    # TTL (time to live) in seconds for cooldown entries. Set to 0 for no automatic expiration.
+    ttl: 3600
+  # Player delays - useful for cross-server teleportation
+  delays:
+    enabled: true
+    # TTL for delay entries
+    ttl: 300
+  # Location cache - improves teleport performance significantly
+  location-cache:
+    enabled: true
+    # TTL for cached locations
+    ttl: 1800
+  # Cross-server teleport requests - recommended for multi-server setups
+  teleport-requests:
+    enabled: true
+    # TTL for teleport request entries
+    ttl: 600
+  # Teleport queue - useful for high-traffic servers
+  teleport-queue:
+    enabled: true
+    # TTL for queue entries
+    ttl: 300
+
+# Fallback configuration
+fallback:
+  # If true, the plugin will fall back to in-memory storage if Redis is unavailable
+  # This ensures the plugin continues working even if Redis goes down
+  enable-memory-fallback: true
+  # If true, the plugin will fall back to MySQL for cross-server features if Redis is unavailable
+  # This requires MySQL to be configured and enabled
+  enable-mysql-fallback: true
+  # Retry connection to Redis if it becomes unavailable
+  auto-reconnect: true
+  # Time to wait before retrying Redis connection (seconds)
+  reconnect-interval: 30
+
+# Key prefixes for Redis keys (useful for multi-server environments)
+key-prefixes:
+  # Server-specific prefix (automatically set to this_server_name from config.yml)
+  server: ''
+  # Global prefix for network-wide data
+  global: 'justrtp'
+  # Specific prefixes for different data types
+  cooldowns: 'cooldowns'
+  delays: 'delays'
+  cache: 'cache'
+  teleports: 'teleports'
+  queue: 'queue'
+
+# Performance settings
+performance:
+  # Use Redis pipelining for better performance with multiple operations
+  use-pipelining: true
+  # Batch size for pipeline operations
+  pipeline-batch-size: 50
+  # Use Redis Pub/Sub for real-time cross-server communication
+  use-pubsub: true
+  
+  # Pub/Sub channels
+  pubsub-channels:
+    teleport-notifications: 'justrtp:teleport:notifications'
+    player-updates: 'justrtp:player:updates'
+    cache-invalidation: 'justrtp:cache:invalidation'
+
+# Debug and monitoring
+debug:
+  # Enable debug logging for Redis operations
+  enabled: false
+  # Log slow Redis operations (operations taking longer than this threshold in ms)
+  log-slow-operations: true
+  slow-operation-threshold: 100
+  # Monitor Redis memory usage
+  monitor-memory: true
+  memory-warning-threshold: 85

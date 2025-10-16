@@ -25,6 +25,10 @@ public class FoliaScheduler {
         }
     }
 
+    public static boolean isFolia() {
+        return IS_FOLIA;
+    }
+
     public void runNow(Runnable task) {
         if (IS_FOLIA) {
             Bukkit.getGlobalRegionScheduler().execute(plugin, task);

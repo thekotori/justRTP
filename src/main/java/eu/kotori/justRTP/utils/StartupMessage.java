@@ -24,6 +24,11 @@ public class StartupMessage {
         String proxyStatus = plugin.getConfigManager().getProxyEnabled() ? check : cross;
         String papiStatus = Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI") ? check : cross;
         String worldGuardStatus = Bukkit.getPluginManager().isPluginEnabled("WorldGuard") ? check : cross;
+        
+        String redisStatus = "<gray>-</gray>";
+        if (plugin.getConfigManager().isRedisEnabled()) {
+            redisStatus = check;
+        }
 
         String engine;
         try {
@@ -54,7 +59,7 @@ public class StartupMessage {
         console.sendMessage(mm.deserialize("  <color:" + mainColor + ">█████╔╝    <white>sᴛᴀᴛᴜs: <color:#2ecc71>Active"));
         console.sendMessage(mm.deserialize("  <color:" + accentColor + ">█╔═██╗"));
         console.sendMessage(mm.deserialize("  <color:" + accentColor + ">█║  ██╗   <white>ᴘʀᴏxʏ sᴜᴘᴘᴏʀᴛ: " + proxyStatus));
-        console.sendMessage(mm.deserialize("  <color:" + accentColor + ">█║  ╚═╝"));
+        console.sendMessage(mm.deserialize("  <color:" + accentColor + ">█║  ╚═╝   <white>ʀᴇᴅɪs ᴄᴀᴄʜᴇ: " + redisStatus + " <gray>(optional)"));
         console.sendMessage(Component.empty());
         console.sendMessage(mm.deserialize("  <white>ᴡᴏʀʟᴅɢᴜᴀʀᴅ: " + worldGuardStatus + " <gray>| <white>ᴘᴀᴘɪ: " + papiStatus + " <gray>| <white>ᴇɴɢɪɴᴇ: <gray>" + engine));
         console.sendMessage(Component.empty());

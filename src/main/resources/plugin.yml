@@ -1,11 +1,11 @@
 name: JustRTP
-version: 3.2.1
+version: 3.2.7
 main: eu.kotori.justRTP.JustRTP
 api-version: '1.20'
 author: kotori
 description: A highly optimized and safe Random Teleport plugin with Folia, Velocity, and MySQL support.
 folia-supported: true
-softdepend: [Vault, PlaceholderAPI, WorldGuard]
+softdepend: [Vault, PlaceholderAPI, WorldGuard, packetevents]
 commands:
   justrtp:
     description: Randomly teleports a player with advanced options.

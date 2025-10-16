@@ -60,8 +60,53 @@ public class RTPTabCompleter implements TabCompleter {
 
         if (plugin.getConfigManager().getProxyEnabled() && sender.hasPermission("justrtp.command.rtp.server")) {
             boolean serverAlreadyPresent = plugin.getConfigManager().getProxyServers().stream().anyMatch(s -> currentArgs.stream().anyMatch(ca -> ca.equalsIgnoreCase(s)));
+            
+            if (currentArg.contains(":")) {
+                String[] parts = currentArg.split(":", 2);
+                String serverPart = parts[0];
+                String worldPart = parts.length > 1 ? parts[1] : "";
+                
+                Optional<String> matchingServer = plugin.getConfigManager().getProxyServers().stream()
+                    .filter(s -> s.equalsIgnoreCase(serverPart))
+                    .findFirst();
+                
+                if (matchingServer.isPresent()) {
+                    if (plugin.getDatabaseManager() != null && plugin.getDatabaseManager().isConnected()) {
+                        try {
+                            List<String> worlds = plugin.getDatabaseManager().getServerWorlds(matchingServer.get()).get();
+                            for (String world : worlds) {
+                                if (world.toLowerCase().startsWith(worldPart.toLowerCase())) {
+                                    completions.add(serverPart + ":" + world);
+                                }
+                            }
+                            if (worlds.isEmpty()) {
+                                for (String defaultWorld : new String[]{"world", "world_nether", "world_the_end"}) {
+                                    if (defaultWorld.toLowerCase().startsWith(worldPart.toLowerCase())) {
+                                        completions.add(serverPart + ":" + defaultWorld);
+                                    }
+                                }
+                            }
+                        } catch (Exception e) {
+                            plugin.debug("Failed to fetch worlds for tab completion: " + e.getMessage());
+                            for (String defaultWorld : new String[]{"world", "world_nether", "world_the_end"}) {
+                                if (defaultWorld.toLowerCase().startsWith(worldPart.toLowerCase())) {
+                                    completions.add(serverPart + ":" + defaultWorld);
+                                }
+                            }
+                        }
+                    }
+                    Collections.sort(completions);
+                    return completions;
+                }
+            }
+            
             if (!serverAlreadyPresent) {
                 options.addAll(plugin.getConfigManager().getProxyServers());
+                for (String server : plugin.getConfigManager().getProxyServers()) {
+                    if ((server + ":").startsWith(currentArg.toLowerCase())) {
+                        options.add(server + ":");
+                    }
+                }
             }
         }
 

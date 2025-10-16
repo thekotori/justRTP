@@ -2,8 +2,8 @@ package eu.kotori.justRTP.managers;
 
 import eu.kotori.justRTP.JustRTP;
 import eu.kotori.justRTP.utils.RTPZone;
+import eu.kotori.justRTP.utils.SafetyValidator;
 import eu.kotori.justRTP.utils.task.CancellableTask;
-import io.papermc.lib.PaperLib;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 import net.kyori.adventure.title.Title;
@@ -22,7 +22,6 @@ import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.logging.Level;
 import java.util.stream.Collectors;
 
@@ -35,6 +34,7 @@ public class RTPZoneManager {
     private final Map<String, CancellableTask> activeZoneTasks = new ConcurrentHashMap<>();
     private final Set<UUID> ignoringPlayers = ConcurrentHashMap.newKeySet();
     private final Set<UUID> recentlyTeleported = ConcurrentHashMap.newKeySet();
+    private final Map<String, Integer> zoneCountdowns = new ConcurrentHashMap<>();
     private File zonesFile;
     private FileConfiguration zonesConfig;
     private CancellableTask hologramHealerTask;
@@ -92,28 +92,47 @@ public class RTPZoneManager {
         }
 
         final int interval = zone.getInterval();
-        final int[] countdown = {interval + 1};
+        final java.util.concurrent.atomic.AtomicInteger countdown = new java.util.concurrent.atomic.AtomicInteger(interval);
+
+        zoneCountdowns.put(zone.getId().toLowerCase(), interval);
+        
+        plugin.getHologramManager().updateHologramTime(zone.getId(), interval);
 
         CancellableTask task = plugin.getFoliaScheduler().runTimerAtLocation(zoneCenter, () -> {
             try {
-                countdown[0]--;
-
                 List<Player> playersInZone = getPlayersInZone(zone.getId());
 
-                if (countdown[0] <= 0) {
-                    plugin.getHologramManager().updateHologramTime(zone.getId(), 0);
+                if (countdown.get() <= 0) {
+                    plugin.getHologramManager().updateHologramProgress(zone.getId());
+                    
                     if (!playersInZone.isEmpty()) {
+                        for (Player player : playersInZone) {
+                            if (!isIgnoring(player)) {
+                                plugin.getFoliaScheduler().runAtEntity(player, () -> {
+                                    player.clearTitle();
+                                });
+                            }
+                        }
+                        
                         teleportPlayersInZone(playersInZone, zone);
                     }
-                    countdown[0] = interval + 1;
+                    
+                    countdown.set(interval);
+                    zoneCountdowns.put(zone.getId().toLowerCase(), interval);
+                    plugin.getHologramManager().updateHologramTime(zone.getId(), interval);
                     return;
                 }
 
-                plugin.getHologramManager().updateHologramTime(zone.getId(), countdown[0]);
+                int currentTime = countdown.decrementAndGet();
+                
+                zoneCountdowns.put(zone.getId().toLowerCase(), currentTime);
+                
+                plugin.getHologramManager().updateHologramTime(zone.getId(), currentTime);
 
                 for (Player player : playersInZone) {
                     if (!isIgnoring(player)) {
-                        plugin.getFoliaScheduler().runAtEntity(player, () -> updateWaitingEffects(player, zone, countdown[0]));
+                        final int timeToPass = currentTime;
+                        plugin.getFoliaScheduler().runAtEntity(player, () -> updateWaitingEffects(player, zone, timeToPass));
                     }
                 }
             } catch (Exception e) {
@@ -143,23 +162,32 @@ public class RTPZoneManager {
 
     private void teleportPlayersInZone(List<Player> players, RTPZone zone) {
         List<Player> teleportCandidates = players.stream()
-                .filter(p -> !isIgnoring(p))
+                .filter(p -> p != null && p.isOnline() && !isIgnoring(p))
                 .collect(Collectors.toList());
 
-        if (teleportCandidates.isEmpty()) return;
+        if (teleportCandidates.isEmpty()) {
+            plugin.debug("No valid teleport candidates for zone " + zone.getId());
+            return;
+        }
+
+        plugin.debug("Teleporting " + teleportCandidates.size() + " players from zone " + zone.getId());
 
         Set<UUID> playersInThisZone = zonePlayersMap.get(zone.getId().toLowerCase());
         if (playersInThisZone != null) {
             teleportCandidates.forEach(p -> {
                 UUID playerUUID = p.getUniqueId();
+                
                 playerZoneMap.remove(playerUUID);
                 playersInThisZone.remove(playerUUID);
+                
                 recentlyTeleported.add(playerUUID);
                 plugin.getFoliaScheduler().runLater(() -> recentlyTeleported.remove(playerUUID), 100L);
 
-                p.clearTitle();
-                plugin.getEffectsManager().clearActionBar(p);
-                plugin.getEffectsManager().applyEffects(p, getZoneEffects(zone, "teleport"));
+                plugin.getFoliaScheduler().runAtEntity(p, () -> {
+                    p.clearTitle();
+                    plugin.getEffectsManager().clearActionBar(p);
+                    plugin.getEffectsManager().applyEffects(p, getZoneEffects(zone, "teleport"));
+                });
             });
         }
 
@@ -168,6 +196,15 @@ public class RTPZoneManager {
             handleLocalZoneTeleport(teleportCandidates, zone, targetWorld);
         } else if (plugin.getConfigManager().getProxyEnabled()) {
             handleProxyZoneTeleport(teleportCandidates, zone);
+        } else {
+            plugin.getLogger().warning("Zone '" + zone.getId() + "' target world '" + zone.getTarget() + 
+                                     "' not found and proxy is disabled. Teleport aborted for " + 
+                                     teleportCandidates.size() + " players.");
+            teleportCandidates.forEach(p -> 
+                plugin.getFoliaScheduler().runAtEntity(p, () -> 
+                    plugin.getLocaleManager().sendMessage(p, "command.world_not_found")
+                )
+            );
         }
     }
 
@@ -176,62 +213,299 @@ public class RTPZoneManager {
     }
 
     private void handleLocalZoneTeleport(List<Player> players, RTPZone zone, World targetWorld) {
+        plugin.getLogger().info("[ZONE RTP] Starting zone teleport for " + players.size() + " player(s) in zone '" + 
+                               zone.getId() + "' to world '" + targetWorld.getName() + "' (" + targetWorld.getEnvironment() + ")");
+        
+        if (targetWorld.getEnvironment() == World.Environment.NETHER) {
+            plugin.getLogger().info("╔════════════════════════════════════════════╗");
+            plugin.getLogger().info("║  NETHER ZONE TELEPORT INITIATED           ║");
+            plugin.getLogger().info("║  World: " + targetWorld.getName() + "              ║");
+            plugin.getLogger().info("║  Environment: NETHER                      ║");
+            plugin.getLogger().info("║  Safety: Y < 127 ENFORCED                 ║");
+            plugin.getLogger().info("╚════════════════════════════════════════════╝");
+        }
+        
+        findSafeLocationsForPlayers(players, zone, targetWorld);
+    }
+
+    private void findSafeLocationsForPlayers(List<Player> players, RTPZone zone, World targetWorld) {
+        plugin.debug("[ZONE RTP] Finding nearby safe locations for " + players.size() + " player(s)");
+        
+        plugin.getHologramManager().updateHologramProgress(zone.getId());
+        
+        int minSpread = zone.getMinSpreadDistance();
+        int maxSpread = zone.getMaxSpreadDistance();
+        
+        plugin.debug("[ZONE RTP] Players will spawn within " + minSpread + " to " + maxSpread + " blocks of central location");
+        
+        Player firstPlayer = players.get(0);
+        plugin.debug("[ZONE RTP] Finding central safe location using " + firstPlayer.getName() + " as reference");
+        
         plugin.getRtpService()
-                .findSafeLocation(null, targetWorld, 25, Optional.of(zone.getMinRadius()), Optional.of(zone.getMaxRadius()))
-                .thenAccept(centerOpt -> {
-                    if (centerOpt.isPresent()) {
-                        spreadAndTeleportPlayers(players, zone, centerOpt.get());
-                    } else {
-                        plugin.getLogger().warning("Could not find a central safe spot for RTP Zone '" + zone.getId() + "'. Teleport aborted.");
-                        players.forEach(p -> plugin.getLocaleManager().sendMessage(p, "teleport.no_location_found"));
-                    }
-                });
-    }
-
-    private void spreadAndTeleportPlayers(List<Player> players, RTPZone zone, Location center) {
-        List<CompletableFuture<Optional<Location>>> locationFutures = new ArrayList<>();
-        for (int i = 0; i < players.size(); i++) {
-            locationFutures.add(findSafeSpreadLocation(center, zone.getMinSpreadDistance(), zone.getMaxSpreadDistance(), 5));
-        }
-
-        CompletableFuture.allOf(locationFutures.toArray(new CompletableFuture[0])).thenAccept(v -> {
-            for (int i = 0; i < players.size(); i++) {
-                Player player = players.get(i);
-                Optional<Location> locationOpt = locationFutures.get(i).join();
-                locationOpt.ifPresent(safeSpot -> {
-                    PaperLib.teleportAsync(player, safeSpot).thenAccept(success -> {
-                        if (success) {
-                            plugin.getEffectsManager().applyPostTeleportEffects(player);
+            .findSafeLocation(firstPlayer, targetWorld, 0, 
+                            Optional.of(zone.getMinRadius()), 
+                            Optional.of(zone.getMaxRadius()))
+            .thenAccept(centralLocationOpt -> {
+                if (!centralLocationOpt.isPresent()) {
+                    plugin.getLogger().warning("[ZONE RTP] Could not find central safe location for zone " + zone.getId());
+                    
+                    for (Player player : players) {
+                        if (player != null && player.isOnline()) {
+                            plugin.getFoliaScheduler().runAtEntity(player, () -> {
+                                plugin.getLocaleManager().sendMessage(player, "teleport.no_location_found");
+                                plugin.getLocaleManager().sendMessage(player, "zone.teleport_failed");
+                            });
                         }
-                    });
-                });
-            }
-        });
+                    }
+                    return;
+                }
+                
+                Location centralLocation = centralLocationOpt.get();
+                plugin.getLogger().info("[ZONE RTP] Central location found at " + 
+                                      centralLocation.getBlockX() + "," + centralLocation.getBlockY() + "," + 
+                                      centralLocation.getBlockZ() + " in " + targetWorld.getName());
+                
+                List<CompletableFuture<Optional<Location>>> locationFutures = new ArrayList<>();
+                List<Location> foundLocations = Collections.synchronizedList(new ArrayList<>());
+                
+                for (int i = 0; i < players.size(); i++) {
+                    final Player player = players.get(i);
+                    final int playerIndex = i;
+                    
+                    CompletableFuture<Optional<Location>> future = findSafeLocationNearby(
+                        player, centralLocation, minSpread, maxSpread, foundLocations, playerIndex, targetWorld
+                    );
+                    
+                    locationFutures.add(future);
+                }
+                
+                completeTeleportation(locationFutures, players, zone, targetWorld, centralLocation);
+            })
+            .exceptionally(throwable -> {
+                plugin.getLogger().severe("[ZONE RTP] Error finding central location: " + throwable.getMessage());
+                throwable.printStackTrace();
+                return null;
+            });
     }
+    
+    private CompletableFuture<Optional<Location>> findSafeLocationNearby(
+            Player player, Location centralLocation, int minSpread, int maxSpread,
+            List<Location> foundLocations, int playerIndex, World targetWorld) {
+        
+        double angle = Math.random() * 2 * Math.PI;
+        double distance = minSpread + (Math.random() * (maxSpread - minSpread)); 
+        int offsetX = (int) (Math.cos(angle) * distance);
+        int offsetZ = (int) (Math.sin(angle) * distance);
+        
+        Location targetLocation = centralLocation.clone().add(offsetX, 0, offsetZ);
+        
+        plugin.debug("[ZONE RTP] Player " + playerIndex + " searching near offset " + 
+                   offsetX + "," + offsetZ + " (distance: " + String.format("%.1f", distance) + ")");
+        
+        return findClosestSafeLocation(player, targetLocation, maxSpread, targetWorld)
+            .thenApply(locationOpt -> {
+                if (locationOpt.isPresent()) {
+                    Location safeLocation = locationOpt.get();
+                    synchronized (foundLocations) {
+                        boolean tooClose = foundLocations.stream()
+                            .anyMatch(existing -> existing.distance(safeLocation) < minSpread);
+                        
+                        if (tooClose && foundLocations.size() > 0) {
+                            plugin.debug("[ZONE RTP] Player " + playerIndex + " location too close, trying different angle");
+                            
+                            for (int attempt = 0; attempt < 3; attempt++) {
+                                double newAngle = Math.random() * 2 * Math.PI;
+                                double newDistance = minSpread + (Math.random() * (maxSpread - minSpread));
+                                int newOffsetX = (int) (Math.cos(newAngle) * newDistance);
+                                int newOffsetZ = (int) (Math.sin(newAngle) * newDistance);
+                                
+                                Location newTarget = centralLocation.clone().add(newOffsetX, 0, newOffsetZ);
+                                
+                                try {
+                                    Optional<Location> newLocation = findClosestSafeLocation(
+                                        player, newTarget, maxSpread, targetWorld
+                                    ).join();
+                                    
+                                    if (newLocation.isPresent()) {
+                                        Location newCandidate = newLocation.get();
+                                        boolean stillTooClose = foundLocations.stream()
+                                            .anyMatch(existing -> existing.distance(newCandidate) < minSpread);
+                                        
+                                        if (!stillTooClose) {
+                                            foundLocations.add(newCandidate);
+                                            plugin.debug("[ZONE RTP] Found better spread location for player " + playerIndex);
+                                            return Optional.of(newCandidate);
+                                        }
+                                    }
+                                } catch (Exception e) {
+                                    plugin.debug("[ZONE RTP] Retry attempt failed: " + e.getMessage());
+                                }
+                            }
+                        }
+                        
+                        foundLocations.add(safeLocation);
+                    }
+                }
+                return locationOpt;
+            });
+    }
+    
+    private CompletableFuture<Optional<Location>> findClosestSafeLocation(
+            Player player, Location targetLocation, int searchRadius, World targetWorld) {
+        
+        int targetX = targetLocation.getBlockX();
+        int targetZ = targetLocation.getBlockZ();
+        
+        Location worldSpawn = targetWorld.getSpawnLocation();
+        int distanceFromSpawn = (int) Math.sqrt(
+            Math.pow(targetX - worldSpawn.getBlockX(), 2) + 
+            Math.pow(targetZ - worldSpawn.getBlockZ(), 2)
+        );
+        
+        int searchMin = Math.max(0, distanceFromSpawn - searchRadius);
+        int searchMax = distanceFromSpawn + searchRadius;
+        
+        return plugin.getRtpService().findSafeLocation(
+            player, targetWorld, 0,
+            Optional.of(searchMin),
+            Optional.of(searchMax)
+        );
+    }
+    
+    private void completeTeleportation(
+            List<CompletableFuture<Optional<Location>>> locationFutures,
+            List<Player> players, RTPZone zone, World targetWorld, Location centralLocation) {
 
-    private CompletableFuture<Optional<Location>> findSafeSpreadLocation(Location center, double minRadius, double maxRadius, int attempts) {
-        if (attempts <= 0) {
-            plugin.getLogger().warning("Could not find a safe spread location near " + center.toString() + " after multiple attempts. Using center as fallback.");
-            return CompletableFuture.completedFuture(Optional.of(center.getWorld().getHighestBlockAt(center).getLocation().add(0.5, 1.5, 0.5)));
-        }
-
-        double angle = ThreadLocalRandom.current().nextDouble(2 * Math.PI);
-        double spread = ThreadLocalRandom.current().nextDouble(minRadius, maxRadius);
-        double offsetX = spread * Math.cos(angle);
-        double offsetZ = spread * Math.sin(angle);
-        Location target = center.clone().add(offsetX, 0, offsetZ);
-
-        return PaperLib.getChunkAtAsync(target.getWorld(), target.getBlockX() >> 4, target.getBlockZ() >> 4, true).thenCompose(chunk -> {
-            if (chunk == null) {
-                return findSafeSpreadLocation(center, minRadius, maxRadius, attempts - 1);
-            }
-            Location finalLoc = target.getWorld().getHighestBlockAt(target).getLocation();
-            if (plugin.getRtpService().isSafeForSpread(finalLoc)) {
-                return CompletableFuture.completedFuture(Optional.of(finalLoc.add(0.5, 1.5, 0.5)));
-            } else {
-                return findSafeSpreadLocation(center, minRadius, maxRadius, attempts - 1);
-            }
-        });
+        CompletableFuture.allOf(locationFutures.toArray(new CompletableFuture[0]))
+            .thenAccept(v -> {
+                int successCount = 0;
+                int failCount = 0;
+                
+                plugin.debug("[ZONE RTP] All location searches completed, starting teleportation phase");
+                
+                for (int i = 0; i < players.size(); i++) {
+                    Player player = players.get(i);
+                    
+                    if (player == null || !player.isOnline()) {
+                        plugin.debug("[ZONE RTP] Player " + (player != null ? player.getName() : "unknown") + 
+                                   " is no longer online, skipping teleport");
+                        failCount++;
+                        continue;
+                    }
+                    
+                    Optional<Location> locationOpt = locationFutures.get(i).join();
+                    
+                    if (locationOpt.isPresent()) {
+                        Location safeSpot = locationOpt.get();
+                        
+                        if (!SafetyValidator.isLocationAbsolutelySafe(safeSpot)) {
+                            String reason = SafetyValidator.getUnsafeReason(safeSpot);
+                            plugin.getLogger().severe("╔════════════════════════════════════════════════════════════╗");
+                            plugin.getLogger().severe("║  ZONE TELEPORT SAFETY VALIDATOR BLOCKED UNSAFE LOCATION!  ║");
+                            plugin.getLogger().severe("║  Player: " + player.getName() + "                         ║");
+                            plugin.getLogger().severe("║  World: " + targetWorld.getName() + " (" + targetWorld.getEnvironment() + ")  ║");
+                            plugin.getLogger().severe("║  Location: " + safeSpot.getBlockX() + "," + safeSpot.getBlockY() + "," + safeSpot.getBlockZ() + "  ║");
+                            plugin.getLogger().severe("║  Reason: " + reason + "                                   ║");
+                            plugin.getLogger().severe("║  THIS IS A CRITICAL SAFETY FAILURE - PLEASE REPORT!       ║");
+                            plugin.getLogger().severe("╚════════════════════════════════════════════════════════════╝");
+                            failCount++;
+                            plugin.getFoliaScheduler().runAtEntity(player, () -> {
+                                plugin.getLocaleManager().sendMessage(player, "teleport.no_location_found");
+                                plugin.getLocaleManager().sendMessage(player, "zone.teleport_failed");
+                            });
+                            continue;
+                        }
+                        
+                        if (targetWorld.getEnvironment() == World.Environment.NETHER) {
+                            double y = safeSpot.getY();
+                            if (y >= 126.0) {
+                                plugin.getLogger().severe("╔════════════════════════════════════════════════════════════╗");
+                                plugin.getLogger().severe("║  EMERGENCY: NETHER ROOF SPAWN BLOCKED IN ZONE!            ║");
+                                plugin.getLogger().severe("║  Player: " + player.getName() + "                         ║");
+                                plugin.getLogger().severe("║  Location: Y=" + y + " >= 126 (head at Y=" + (y+1) + ")   ║");
+                                plugin.getLogger().severe("║  This should NEVER happen - RTPService failed!             ║");
+                                plugin.getLogger().severe("╚════════════════════════════════════════════════════════════╝");
+                                failCount++;
+                                plugin.getFoliaScheduler().runAtEntity(player, () -> {
+                                    plugin.getLocaleManager().sendMessage(player, "teleport.no_location_found");
+                                    plugin.getLocaleManager().sendMessage(player, "zone.teleport_failed");
+                                });
+                                continue;
+                            }
+                            plugin.getLogger().info("[ZONE RTP - NETHER SAFE] ✓ Verified Y=" + y + " < 126 (head at Y=" + (y+1) + ") for " + player.getName());
+                        } else if (targetWorld.getEnvironment() == World.Environment.THE_END) {
+                            double y = safeSpot.getY();
+                            if (y < 10 || y > 120) {
+                                plugin.getLogger().severe("[ZONE RTP - END SAFETY] Rejected Y=" + y + " (out of range 10-120) for " + player.getName());
+                                failCount++;
+                                plugin.getFoliaScheduler().runAtEntity(player, () -> {
+                                    plugin.getLocaleManager().sendMessage(player, "teleport.no_location_found");
+                                    plugin.getLocaleManager().sendMessage(player, "zone.teleport_failed");
+                                });
+                                continue;
+                            }
+                            plugin.getLogger().info("[ZONE RTP - END SAFE] ✓ Verified Y=" + y + " (range 10-120) for " + player.getName());
+                        }
+                        
+                        successCount++;
+                        
+                        plugin.getLogger().info("[ZONE RTP] Found safe location for " + player.getName() + 
+                                              " at Y=" + safeSpot.getY() + " in " + targetWorld.getName());
+                        
+                        plugin.getFoliaScheduler().runAtEntity(player, () -> {
+                            plugin.getRtpService().teleportPlayer(player, safeSpot);
+                            plugin.getLocaleManager().sendMessage(player, "zone.teleport_success");
+                            plugin.debug("[ZONE RTP] Successfully teleported " + player.getName() + 
+                                       " to " + safeSpot.getBlockX() + "," + safeSpot.getBlockY() + "," + 
+                                       safeSpot.getBlockZ() + " in " + targetWorld.getName());
+                        });
+                    } else {
+                        failCount++;
+                        plugin.getLogger().warning("[ZONE RTP] Could not find safe location for " + 
+                                                 player.getName() + " in zone " + zone.getId() + 
+                                                 " after all attempts");
+                        plugin.getFoliaScheduler().runAtEntity(player, () -> {
+                            plugin.getLocaleManager().sendMessage(player, "teleport.no_location_found");
+                            plugin.getLocaleManager().sendMessage(player, "zone.teleport_failed");
+                        });
+                    }
+                }
+                
+                final int finalSuccess = successCount;
+                final int finalFail = failCount;
+                
+                plugin.getLogger().info("[ZONE RTP] Zone '" + zone.getId() + "' group teleport complete:");
+                plugin.getLogger().info("  Central Location: " + centralLocation.getBlockX() + "," + 
+                                      centralLocation.getBlockY() + "," + centralLocation.getBlockZ());
+                plugin.getLogger().info("  Players: " + finalSuccess + "/" + players.size() + " teleported successfully" +
+                                      (finalFail > 0 ? ", " + finalFail + " failed" : ""));
+                plugin.getLogger().info("  All players spawned within " + zone.getMaxSpreadDistance() + 
+                                      " blocks of central location");
+                
+                if (finalFail > 0) {
+                    plugin.getLogger().warning("[ZONE RTP] Zone " + zone.getId() + " had " + finalFail + 
+                                             " failed teleports. Check world configuration and zone radius settings.");
+                }
+                
+                plugin.getFoliaScheduler().runLater(() -> {
+                    plugin.getHologramManager().updateHologramTime(zone.getId(), zone.getInterval());
+                    plugin.debug("[ZONE RTP] Zone '" + zone.getId() + "' reset hologram to " + zone.getInterval() + "s");
+                }, 20L); 
+            })
+            .exceptionally(throwable -> {
+                plugin.getLogger().severe("[ZONE RTP] Critical error during zone teleport for zone " + 
+                                        zone.getId() + ": " + throwable.getMessage());
+                throwable.printStackTrace();
+                
+                for (Player player : players) {
+                    if (player != null && player.isOnline()) {
+                        plugin.getFoliaScheduler().runAtEntity(player, () -> {
+                            plugin.getLocaleManager().sendMessage(player, "zone.teleport_failed");
+                        });
+                    }
+                }
+                return null;
+            });
     }
 
     private void updateWaitingEffects(Player player, RTPZone zone, int timeRemaining) {
@@ -465,6 +739,18 @@ public class RTPZoneManager {
                     Placeholder.unparsed("target", zone.getTarget())
             ));
         }
+    }
+
+    public int getZoneCountdown(String zoneId) {
+        return zoneCountdowns.getOrDefault(zoneId.toLowerCase(), -1);
+    }
+    
+    public String getPlayerZone(Player player) {
+        return playerZoneMap.get(player.getUniqueId());
+    }
+    
+    public Collection<RTPZone> getAllZones() {
+        return zones.values();
     }
 
     public boolean zoneExists(String id) {

@@ -6,7 +6,7 @@
 # This file must be configured identically on ALL Spigot/Paper servers where JustRTP is installed.
 # ----------------------------------------------------------------
 # CONFIG VERSION - DO NOT CHANGE THIS
-config-version: 2
+config-version: 5
 # ----------------------------------------------------------------
 
 # Set to true to enable MySQL integration for proxy features.
@@ -15,16 +15,12 @@ enabled: false
 
 # Your MySQL database host address. Use '127.0.0.1' for localhost.
 host: 'localhost'
-
 # The port your MySQL server is running on. Default is 3306.
 port: 3306
-
 # The name of the database JustRTP should use. This database must exist.
 database: 'justrtp'
-
 # The username for connecting to the database.
 username: 'root'
-
 # The password for the specified user.
 password: 'password'
 

@@ -42,6 +42,10 @@ public class ConfigUpdater {
                 FileConfiguration defaultConfig = YamlConfiguration.loadConfiguration(new InputStreamReader(defaultStream));
 
                 for (String key : defaultConfig.getKeys(true)) {
+                    if (defaultConfig.isConfigurationSection(key)) {
+                        continue;
+                    }
+                    
                     if (userConfig.contains(key)) {
                         defaultConfig.set(key, userConfig.get(key));
                     }

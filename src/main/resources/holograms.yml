@@ -1,8 +1,8 @@
 # ----------------------------------------------------------------
-# JustRTP Zone Hologram Configuration
+# JustRTP Hologram Configuration
 # ----------------------------------------------------------------
 # CONFIG VERSION - DO NOT CHANGE THIS
-config-version: 3
+config-version: 6
 # ----------------------------------------------------------------
 #
 # Customize the holograms that appear above RTP zones here.
@@ -25,10 +25,11 @@ hologram-settings:
 
   # The lines of text to display in the hologram.
   # Use an empty string "" for a blank line.
+  # <time> = countdown number (5, 4, 3, 2, 1) or "Teleport in progress"
   lines:
     - "<gradient:#20B2AA:#7FFFD4><bold>RTP Zone</bold></gradient>"
     - ""
-    - "<gray>Teleporting in <white><time>s</white>..."
+    - "<white><time>s</white>"
 
   # Particle effect that swirls around the hologram location.
   particles:

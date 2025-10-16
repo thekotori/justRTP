@@ -148,14 +148,31 @@ public class LocationCacheManager {
 
         plugin.getRtpService().findSafeLocationForCache(world)
                 .whenCompleteAsync((locationOpt, throwable) -> {
-                    if (locationOpt.isPresent()) {
-                        locationCache.get(world.getName()).add(locationOpt.get());
-                        failedWorldsCooldown.remove(world.getName());
-                        plugin.getFoliaScheduler().runAsync(() -> fillQueueWorker(world, locationsNeeded - 1));
-                    } else {
-                        plugin.getLogger().warning("Failed to find a safe location for '" + world.getName() + "' cache after many attempts. Pausing searches for this world for 1 minute.");
-                        failedWorldsCooldown.put(world.getName(), System.currentTimeMillis());
-                        isRefilling.put(world.getName(), false);
+                    try {
+                        if (throwable != null) {
+                            plugin.getLogger().warning("Exception during location search for '" + world.getName() + "' cache: " + throwable.getMessage());
+                            failedWorldsCooldown.put(world.getName(), System.currentTimeMillis());
+                            return;
+                        }
+                        
+                        if (locationOpt.isPresent()) {
+                            ConcurrentLinkedQueue<Location> queue = locationCache.get(world.getName());
+                            if (queue != null) {
+                                queue.add(locationOpt.get());
+                            }
+                            failedWorldsCooldown.remove(world.getName());
+                            plugin.getFoliaScheduler().runAsync(() -> fillQueueWorker(world, locationsNeeded - 1));
+                        } else {
+                            plugin.getLogger().warning("Failed to find a safe location for '" + world.getName() + "' cache after many attempts. Pausing searches for this world for 1 minute.");
+                            failedWorldsCooldown.put(world.getName(), System.currentTimeMillis());
+                        }
+                    } catch (Exception e) {
+                        plugin.getLogger().severe("Unexpected error in fillQueueWorker for '" + world.getName() + "': " + e.getMessage());
+                        e.printStackTrace();
+                    } finally {
+                        if (throwable != null || !locationOpt.isPresent() || locationsNeeded <= 1) {
+                            isRefilling.put(world.getName(), false);
+                        }
                     }
                 });
     }

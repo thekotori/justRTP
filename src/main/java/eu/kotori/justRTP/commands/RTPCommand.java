@@ -48,6 +48,7 @@ public class RTPCommand implements CommandExecutor {
                 case "credits": handleCredits(sender); return true;
                 case "proxystatus": handleProxyStatus(sender); return true;
                 case "confirm": handleConfirm(sender); return true;
+                case "help": handleHelp(sender); return true;
             }
         }
 
@@ -65,6 +66,14 @@ public class RTPCommand implements CommandExecutor {
 
         plugin.debug("Parsed command: targetPlayer=" + parsed.targetPlayer().getName() + ", targetWorld=" + (parsed.targetWorld() != null ? parsed.targetWorld().getName() : "null") + ", targetServer=" + parsed.targetServer() + ", proxyTargetWorld=" + parsed.proxyTargetWorld());
 
+        if (parsed.targetServer() != null && parsed.targetServer().equalsIgnoreCase(plugin.getConfigManager().getProxyThisServerName())) {
+            String worldName = parsed.proxyTargetWorld() != null ? parsed.proxyTargetWorld() : "world";
+            plugin.getLocaleManager().sendMessage(sender, "proxy.same_server_error", 
+                Placeholder.unparsed("this_server", parsed.targetServer()),
+                Placeholder.unparsed("world", worldName));
+            return CompletableFuture.completedFuture(false);
+        }
+        
         if (parsed.targetServer() != null && !parsed.targetServer().equalsIgnoreCase(plugin.getConfigManager().getProxyThisServerName())) {
             return validateAndInitiateProxyRtp(sender, parsed, args);
         } else {
@@ -107,13 +116,14 @@ public class RTPCommand implements CommandExecutor {
                 String[] parts = arg.split(":", 2);
                 if (availableServers.stream().anyMatch(s -> s.equalsIgnoreCase(parts[0]))) {
                     targetServer = parts[0];
-                    proxyTargetWorld = parts[1];
+                    proxyTargetWorld = parts.length > 1 && !parts[1].isEmpty() ? parts[1] : null;
                     consumed = true;
                 }
             }
 
             if (!consumed && targetServer == null && availableServers.stream().anyMatch(s -> s.equalsIgnoreCase(arg))) {
                 targetServer = arg;
+                proxyTargetWorld = "world";
                 consumed = true;
             }
 
@@ -203,6 +213,12 @@ public class RTPCommand implements CommandExecutor {
             plugin.getLocaleManager().sendMessage(sender, "teleport.already_in_progress");
             return CompletableFuture.completedFuture(false);
         }
+        
+        if (plugin.getTeleportQueueManager().isPlayerInProgress(target.getUniqueId())) {
+            plugin.debug("Player " + target.getName() + " already has a local teleport in queue");
+            plugin.getLocaleManager().sendMessage(sender, "teleport.already_in_progress");
+            return CompletableFuture.completedFuture(false);
+        }
 
         long remainingCooldown = plugin.getCooldownManager().getRemaining(target.getUniqueId());
         if (remainingCooldown > 0) {
@@ -212,6 +228,7 @@ public class RTPCommand implements CommandExecutor {
 
         int cooldown = plugin.getConfigManager().getCooldown(target, target.getWorld());
         plugin.getCooldownManager().setCooldown(target.getUniqueId(), cooldown);
+        plugin.debug("Set cooldown for " + target.getName() + ": " + cooldown + " seconds");
 
         String serverAlias = plugin.getConfigManager().getProxyServerAlias(parsed.targetServer());
         plugin.getLocaleManager().sendMessage(sender, "proxy.searching", Placeholder.unparsed("server", serverAlias));
@@ -221,7 +238,7 @@ public class RTPCommand implements CommandExecutor {
     }
 
     private CompletableFuture<Boolean> validateAndInitiateLocalRtp(CommandSender sender, ParsedCommand parsed, boolean crossServerNoDelay) {
-        plugin.debug("Validating and initiating local RTP.");
+        plugin.debug("Validating and initiating local RTP for " + parsed.targetPlayer().getName() + " (crossServerNoDelay=" + crossServerNoDelay + ")");
         Player targetPlayer = parsed.targetPlayer();
         World targetWorld = parsed.targetWorld();
 
@@ -232,6 +249,18 @@ public class RTPCommand implements CommandExecutor {
 
         if (!plugin.getRtpService().isRtpEnabled(targetWorld)) {
             plugin.getLocaleManager().sendMessage(sender, "command.world_disabled", Placeholder.unparsed("world", targetWorld.getName()));
+            return CompletableFuture.completedFuture(false);
+        }
+        
+        if (plugin.getDelayManager().isDelayed(targetPlayer.getUniqueId())) {
+            plugin.debug("Player " + targetPlayer.getName() + " is already delayed (in progress)");
+            plugin.getLocaleManager().sendMessage(sender, "teleport.already_in_progress");
+            return CompletableFuture.completedFuture(false);
+        }
+        
+        if (plugin.getTeleportQueueManager().isPlayerInProgress(targetPlayer.getUniqueId())) {
+            plugin.debug("Player " + targetPlayer.getName() + " is already in teleport queue");
+            plugin.getLocaleManager().sendMessage(sender, "teleport.already_in_progress");
             return CompletableFuture.completedFuture(false);
         }
 
@@ -334,31 +363,123 @@ public class RTPCommand implements CommandExecutor {
         String thisServerName = plugin.getConfigManager().getProxyThisServerName();
         boolean isProxyEnabled = plugin.getProxyManager().isProxyEnabled();
 
-        sender.sendMessage(mm.deserialize("<br><gradient:#20B2AA:#7FFFD4><b>JustRTP Proxy Status</b></gradient>"));
-        sender.sendMessage(mm.deserialize("<gray>--------------------------------------------------</gray>"));
+        sender.sendMessage(mm.deserialize("<br><gradient:#20B2AA:#7FFFD4><b>JustRTP Proxy & Network Status</b></gradient>"));
+        sender.sendMessage(mm.deserialize("<gray>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</gray>"));
+        sender.sendMessage(mm.deserialize(""));
 
+        sender.sendMessage(mm.deserialize("<gradient:#20B2AA:#7FFFD4>▶ Proxy Configuration</gradient>"));
         sender.sendMessage(isProxyEnabled ?
-                mm.deserialize("<green>✔</green> Proxy feature is <green><b>enabled</b></green> in config.yml.") :
-                mm.deserialize("<red>✖</red> Proxy feature is <red><b>disabled</b></red> in config.yml."));
+                mm.deserialize("  <green>✔</green> Proxy feature: <green><b>ENABLED</b></green>") :
+                mm.deserialize("  <red>✖</red> Proxy feature: <red><b>DISABLED</b></red>"));
 
-        if (!isProxyEnabled) return;
-
-        sender.sendMessage(thisServerName.isEmpty() || thisServerName.equals("server-name") ?
-                mm.deserialize("<red>✖</red> <white>'this_server_name' is <red><b>not set</b></red>! This is required.") :
-                mm.deserialize("<green>✔</green> <white>This server is identified as: <gold>" + thisServerName + "</gold>"));
-
-        boolean mysqlEnabled = plugin.getConfigManager().isProxyMySqlEnabled();
-        sender.sendMessage(mysqlEnabled ?
-                mm.deserialize("<green>✔</green> MySQL is <green><b>enabled</b></green> in mysql.yml.") :
-                mm.deserialize("<red>✖</red> MySQL is <red><b>disabled</b></red> in mysql.yml."));
-
-        if (mysqlEnabled && plugin.getDatabaseManager() != null) {
-            sender.sendMessage(plugin.getDatabaseManager().isConnected() ?
-                    mm.deserialize("<green>✔</green> MySQL connection is <green><b>active</b></green>.") :
-                    mm.deserialize("<red>✖</red> MySQL connection is <red><b>inactive</b></red>. Check credentials/firewall."));
+        if (!isProxyEnabled) {
+            sender.sendMessage(mm.deserialize("  <gray>└─ Enable in <white>config.yml<gray> -> <white>proxy.enabled: true"));
+            sender.sendMessage(mm.deserialize(""));
+            sender.sendMessage(mm.deserialize("<gray>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</gray>"));
+            return;
         }
 
-        sender.sendMessage(mm.deserialize("<gray>--------------------------------------------------</gray>"));
+        sender.sendMessage(thisServerName.isEmpty() || thisServerName.equals("server-name") ?
+                mm.deserialize("  <red>✖</red> Server name: <red><b>NOT SET</b></red> <gray>(Required!)") :
+                mm.deserialize("  <green>✔</green> Server name: <gold>" + thisServerName + "</gold>"));
+        
+        sender.sendMessage(mm.deserialize("  <gray>└─ Tip: Use <white>/rtp " + thisServerName + ":world<gray> for local RTP"));
+        sender.sendMessage(mm.deserialize(""));
+
+        sender.sendMessage(mm.deserialize("<gradient:#20B2AA:#7FFFD4>▶ MySQL Database</gradient>"));
+        boolean mysqlEnabled = plugin.getConfigManager().isProxyMySqlEnabled();
+        sender.sendMessage(mysqlEnabled ?
+                mm.deserialize("  <green>✔</green> MySQL: <green><b>ENABLED</b></green>") :
+                mm.deserialize("  <red>✖</red> MySQL: <red><b>DISABLED</b></red>"));
+
+        if (mysqlEnabled && plugin.getDatabaseManager() != null) {
+            boolean mysqlConnected = plugin.getDatabaseManager().isConnected();
+            sender.sendMessage(mysqlConnected ?
+                    mm.deserialize("  <green>✔</green> Connection: <green><b>ACTIVE</b></green>") :
+                    mm.deserialize("  <red>✖</red> Connection: <red><b>FAILED</b></red>"));
+            
+            if (mysqlConnected) {
+                Map<String, String> dbInfo = plugin.getDatabaseManager().getConnectionInfo();
+                sender.sendMessage(mm.deserialize("  <gray>├─ Host: <white>" + dbInfo.getOrDefault("host", "N/A") + ":" + dbInfo.getOrDefault("port", "N/A")));
+                sender.sendMessage(mm.deserialize("  <gray>├─ Database: <white>" + dbInfo.getOrDefault("database", "N/A")));
+                sender.sendMessage(mm.deserialize("  <gray>└─ Pool: <white>" + dbInfo.getOrDefault("pool_size", "0") + "<gray> active connections"));
+            } else {
+                sender.sendMessage(mm.deserialize("  <gray>└─ Check credentials/firewall in <white>mysql.yml"));
+            }
+        } else {
+            sender.sendMessage(mm.deserialize("  <gray>└─ Enable in <white>mysql.yml<gray> for cross-server support"));
+        }
+        sender.sendMessage(mm.deserialize(""));
+
+        sender.sendMessage(mm.deserialize("<gradient:#20B2AA:#7FFFD4>▶ Redis Cache</gradient> <gray>(Optional)"));
+        boolean redisEnabled = plugin.getConfigManager().isRedisEnabled();
+        sender.sendMessage(redisEnabled ?
+                mm.deserialize("  <green>✔</green> Redis: <green><b>ENABLED</b></green> <gray>(Check redis.yml for details)") :
+                mm.deserialize("  <gray>-</gray> Redis: <gray><b>DISABLED</b></gray> <gray>(Using memory/MySQL fallback)"));
+        
+        if (redisEnabled) {
+            String redisHost = plugin.getConfig().getString("redis.connection.host", "localhost");
+            int redisPort = plugin.getConfig().getInt("redis.connection.port", 6379);
+            sender.sendMessage(mm.deserialize("  <gray>├─ Host: <white>" + redisHost + ":" + redisPort));
+            
+            List<String> storageTypes = new ArrayList<>();
+            if (plugin.getConfig().getBoolean("redis.storage.cooldowns")) storageTypes.add("cooldowns");
+            if (plugin.getConfig().getBoolean("redis.storage.delays")) storageTypes.add("delays");
+            if (plugin.getConfig().getBoolean("redis.storage.cache")) storageTypes.add("cache");
+            if (plugin.getConfig().getBoolean("redis.storage.teleport_requests")) storageTypes.add("requests");
+            
+            if (!storageTypes.isEmpty()) {
+                sender.sendMessage(mm.deserialize("  <gray>├─ Storage: <aqua>" + String.join("<gray>, <aqua>", storageTypes)));
+            }
+            
+            boolean pubsubEnabled = plugin.getConfig().getBoolean("redis.pubsub.enabled", false);
+            sender.sendMessage(mm.deserialize("  <gray>└─ PubSub: " + (pubsubEnabled ? "<green>enabled" : "<gray>disabled")));
+        } else {
+            sender.sendMessage(mm.deserialize("  <gray>└─ Plugin works fully without Redis"));
+        }
+        
+        sender.sendMessage(mm.deserialize(""));
+        sender.sendMessage(mm.deserialize("<gray>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</gray>"));
+        sender.sendMessage(mm.deserialize("<gradient:#20B2AA:#7FFFD4>💡 Tip:</gradient> <gray>Use <white>/rtp <gold>server<white>:<aqua>world<gray> for cross-server RTP"));
+        sender.sendMessage(mm.deserialize("<gray>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</gray>"));
+    }
+
+    private void handleHelp(CommandSender sender) {
+        MiniMessage mm = MiniMessage.miniMessage();
+        String thisServer = plugin.getConfigManager().getProxyThisServerName();
+        boolean proxyEnabled = plugin.getConfigManager().getProxyEnabled();
+        
+        sender.sendMessage(mm.deserialize(""));
+        sender.sendMessage(mm.deserialize("<gradient:#20B2AA:#7FFFD4>━━━━━━━━━━━━ JustRTP Command Guide ━━━━━━━━━━━━</gradient>"));
+        sender.sendMessage(mm.deserialize(""));
+        sender.sendMessage(mm.deserialize("<yellow><b>Basic Usage:</b>"));
+        sender.sendMessage(mm.deserialize("  <white>/rtp                    <dark_gray>→ <gray>Random location (current world)"));
+        sender.sendMessage(mm.deserialize("  <white>/rtp <aqua>world_nether        <dark_gray>→ <gray>Random location in world_nether"));
+        sender.sendMessage(mm.deserialize("  <white>/rtp <aqua>world_the_end       <dark_gray>→ <gray>Random location in the end"));
+        sender.sendMessage(mm.deserialize(""));
+        
+        if (proxyEnabled) {
+            sender.sendMessage(mm.deserialize("<gold><b>Cross-Server Usage:</b>"));
+            sender.sendMessage(mm.deserialize("  <white>/rtp <gold>lobby2              <dark_gray>→ <gray>Default world on lobby2"));
+            sender.sendMessage(mm.deserialize("  <white>/rtp <gold>lobby2<white>:<aqua>world_nether <dark_gray>→ <gray>world_nether on lobby2"));
+            sender.sendMessage(mm.deserialize("  <white>/rtp <gold>factions<white>:<aqua>world       <dark_gray>→ <gray>world on factions server"));
+            sender.sendMessage(mm.deserialize(""));
+            sender.sendMessage(mm.deserialize("<gray>💡 <white>Important: <gray>For <yellow>same server<gray>, use <white>/rtp <aqua>world"));
+            sender.sendMessage(mm.deserialize("<gray>   Current server: <gold>" + thisServer));
+            sender.sendMessage(mm.deserialize(""));
+        }
+        
+        sender.sendMessage(mm.deserialize("<aqua><b>Advanced Usage:</b>"));
+        sender.sendMessage(mm.deserialize("  <white>/rtp <player>           <dark_gray>→ <gray>Teleport another player"));
+        sender.sendMessage(mm.deserialize("  <white>/rtp <radius>           <dark_gray>→ <gray>Custom max radius"));
+        sender.sendMessage(mm.deserialize("  <white>/rtp <min> <max>        <dark_gray>→ <gray>Custom min/max radius"));
+        sender.sendMessage(mm.deserialize(""));
+        sender.sendMessage(mm.deserialize("<green><b>Special Commands:</b>"));
+        sender.sendMessage(mm.deserialize("  <white>/rtp confirm            <dark_gray>→ <gray>Confirm paid teleport"));
+        sender.sendMessage(mm.deserialize("  <white>/rtp proxystatus        <dark_gray>→ <gray>Check proxy/database status"));
+        sender.sendMessage(mm.deserialize("  <white>/rtp reload             <dark_gray>→ <gray>Reload configuration <gray>(admin)"));
+        sender.sendMessage(mm.deserialize(""));
+        sender.sendMessage(mm.deserialize("<gradient:#20B2AA:#7FFFD4>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</gradient>"));
     }
 
     private void handleReload(CommandSender sender) {

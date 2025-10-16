@@ -32,6 +32,9 @@ public class HologramManager {
     private final Map<String, HologramInstance> activeHolograms = new ConcurrentHashMap<>();
     private final Map<String, Boolean> hologramCreationLocks = new ConcurrentHashMap<>();
     private final String HOLOGRAM_METADATA_KEY = "justrtp_hologram";
+    
+    private PacketHologramManager packetHologramManager;
+    private boolean usePacketEvents = false;
 
     private static class HologramInstance {
         final List<TextDisplay> displays;
@@ -45,6 +48,26 @@ public class HologramManager {
     public HologramManager(JustRTP plugin) {
         this.plugin = plugin;
         this.displayEntitiesFile = new File(plugin.getDataFolder(), "display_entities.yml");
+        
+        try {
+            if (Bukkit.getPluginManager().isPluginEnabled("packetevents")) {
+                this.packetHologramManager = new PacketHologramManager(plugin);
+                this.usePacketEvents = packetHologramManager.isPacketEventsAvailable();
+                
+                if (usePacketEvents) {
+                    plugin.getLogger().info("PacketEvents detected! Using high-performance packet-based holograms.");
+                    Bukkit.getPluginManager().registerEvents(packetHologramManager, plugin);
+                }
+            }
+        } catch (Exception e) {
+            plugin.getLogger().warning("Failed to initialize PacketEvents holograms: " + e.getMessage());
+            plugin.debug("Error details: " + e.toString());
+            this.usePacketEvents = false;
+        }
+        
+        if (!usePacketEvents) {
+            plugin.debug("Using entity-based holograms (Display entities).");
+        }
     }
 
     public void initialize() {
@@ -54,6 +77,14 @@ public class HologramManager {
         }
         hologramsConfig = YamlConfiguration.loadConfiguration(configFile);
         loadDisplayEntities();
+        
+        if (usePacketEvents && packetHologramManager != null) {
+            packetHologramManager.initialize();
+        }
+    }
+    
+    public boolean isUsingPacketEvents() {
+        return usePacketEvents;
     }
 
     private void loadDisplayEntities() {
@@ -93,6 +124,11 @@ public class HologramManager {
     }
 
     public void createOrUpdateHologram(String zoneId, Location location, int viewDistance) {
+        if (usePacketEvents && packetHologramManager != null) {
+            packetHologramManager.createOrUpdateHologram(zoneId, location, viewDistance);
+            return;
+        }
+        
         if (hologramCreationLocks.putIfAbsent(zoneId.toLowerCase(), true) != null) {
             plugin.debug("Hologram creation/update for " + zoneId + " is already in progress.");
             return;
@@ -144,6 +180,11 @@ public class HologramManager {
     }
 
     public void updateHologramTime(String zoneId, int time) {
+        if (usePacketEvents && packetHologramManager != null) {
+            packetHologramManager.updateHologramTime(zoneId, time);
+            return;
+        }
+        
         HologramInstance instance = activeHolograms.get(zoneId.toLowerCase());
         if (instance == null || instance.displays.isEmpty()) return;
 
@@ -156,6 +197,8 @@ public class HologramManager {
 
         Location hologramCenter = instance.displays.get(0).getLocation();
 
+        String timeString = String.valueOf(time);
+        
         List<String> lines = hologramsConfig.getStringList("hologram-settings.lines");
         int displayIndex = 0;
         for (String line : lines) {
@@ -165,7 +208,45 @@ public class HologramManager {
                 if (display != null && display.isValid()) {
                     display.text(MiniMessage.miniMessage().deserialize(line,
                             Placeholder.unparsed("zone_id", zoneId),
-                            Placeholder.unparsed("time", String.valueOf(time))
+                            Placeholder.unparsed("time", timeString)
+                    ));
+                }
+                displayIndex++;
+            }
+        }
+        spawnParticles(hologramCenter, instance);
+    }
+
+    public void updateHologramProgress(String zoneId) {
+        if (usePacketEvents && packetHologramManager != null) {
+            packetHologramManager.updateHologramProgress(zoneId);
+            return;
+        }
+        
+        HologramInstance instance = activeHolograms.get(zoneId.toLowerCase());
+        if (instance == null || instance.displays.isEmpty()) return;
+
+        boolean anyValid = instance.displays.stream().anyMatch(d -> d != null && d.isValid() && !d.isDead());
+        if (!anyValid) {
+            plugin.debug("All hologram displays for zone " + zoneId + " are invalid/dead. Removing instance.");
+            activeHolograms.remove(zoneId.toLowerCase());
+            return;
+        }
+
+        Location hologramCenter = instance.displays.get(0).getLocation();
+
+        String progressText = "TELEPORTING...";
+        
+        List<String> lines = hologramsConfig.getStringList("hologram-settings.lines");
+        int displayIndex = 0;
+        for (String line : lines) {
+            if (displayIndex >= instance.displays.size()) break;
+            if (!line.isEmpty()) {
+                TextDisplay display = instance.displays.get(displayIndex);
+                if (display != null && display.isValid()) {
+                    display.text(MiniMessage.miniMessage().deserialize(line,
+                            Placeholder.unparsed("zone_id", zoneId),
+                            Placeholder.unparsed("time", progressText)
                     ));
                 }
                 displayIndex++;
@@ -188,13 +269,20 @@ public class HologramManager {
                 double currentAngle = angle + (2 * Math.PI * i / count);
                 double x = center.getX() + radius * Math.cos(currentAngle);
                 double z = center.getZ() + radius * Math.sin(currentAngle);
-                center.getWorld().spawnParticle(particle, x, center.getY(), z, 1, 0, 0, 0, 0);
+                Location particleLocation = new Location(center.getWorld(), x, center.getY(), z);
+                center.getWorld().spawnParticle(particle, particleLocation, 1, 0, 0, 0, 0);
             }
         } catch (IllegalArgumentException e) {
+            plugin.debug("Invalid particle type in holograms.yml: " + particleSection.getString("particle"));
         }
     }
 
     public void removeHologram(String zoneId) {
+        if (usePacketEvents && packetHologramManager != null) {
+            packetHologramManager.removeHologram(zoneId);
+            return;
+        }
+        
         HologramInstance instance = activeHolograms.remove(zoneId.toLowerCase());
         if (instance != null) {
             instance.displays.forEach(display -> {
@@ -217,7 +305,6 @@ public class HologramManager {
                 }
             }
         }
-
         displayEntitiesConfig.set("zones." + zoneId.toLowerCase(), null);
         saveDisplayEntities();
     }
@@ -225,6 +312,10 @@ public class HologramManager {
     public void cleanupAllHolograms() {
         plugin.debug("Cleaning up all JustRTP holograms from all worlds...");
 
+        if (usePacketEvents && packetHologramManager != null) {
+            packetHologramManager.cleanupAllHolograms();
+        }
+        
         activeHolograms.values().forEach(instance -> instance.displays.forEach(Entity::remove));
         activeHolograms.clear();
 
