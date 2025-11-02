@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-<img src="https://img.shields.io/badge/Version-3.2.9-brightgreen?style=for-the-badge" alt="Version" />
+<img src="https://img.shields.io/badge/Version-3.3.1-brightgreen?style=for-the-badge" alt="Version" />
 <img src="https://img.shields.io/badge/API-1.21+-blue?style=for-the-badge" alt="API Version" />
 <img src="https://img.shields.io/badge/Java-21+-orange?style=for-the-badge" alt="Java" />
 <img src="https://img.shields.io/badge/Folia-Supported-purple?style=for-the-badge" alt="Folia" />
@@ -29,14 +29,19 @@ JustRTP is a feature-rich random teleport plugin designed for modern Minecraft s
 
 ### Key Features
 
+- **Human-Readable Time Formatting** - Display cooldowns as "5m 38s" instead of "338 seconds"
+- **OP/Permission Cooldown Bypass** - OP players and bypass permission holders skip cooldowns
+- **Empty Message Suppression** - Hide any message by setting it to "" in messages.yml
+- **Radius-Based Pricing** - Charge different prices based on teleport radius chosen
+- **Per-World Cooldowns** - Independent cooldowns for each world - teleport freely between dimensions!
 - **High Performance** - Asynchronous location cache and optimized search algorithms
 - **Safety First** - Intelligent terrain analysis with dimension-specific scanning
 - **Cross-Server Support** - Network-wide teleportation via MySQL backend
 - **RTP Zones** - Arena-style zones with countdown holograms and group teleports
-- **3-Tier Hologram System (NEW 3.2.9)** - FancyHolograms, PacketEvents, or Display Entities with auto-selection
-- **Persistent Holograms (NEW 3.2.9)** - FancyHolograms integration with player-editable, restart-proof holograms
+- **3-Tier Hologram System** - FancyHolograms, PacketEvents, or Display Entities with auto-selection
+- **Persistent Holograms** - FancyHolograms integration with player-editable, restart-proof holograms
 - **Rich Visuals** - MiniMessage formatting with titles, particles, and effects
-- **Economy Integration** - Vault support with cost per teleport
+- **Economy Integration** - Vault support with cost per teleport and radius-based pricing
 - **Flexible Configuration** - Per-world settings, permission groups, and custom radii
 - **Hook Support** - WorldGuard regions, PlaceholderAPI, FancyHolograms, and PacketEvents
 - **Folia Ready** - Full support for multi-threaded region servers  
@@ -175,7 +180,7 @@ worlds:
     type: OVERWORLD         # or NETHER, THE_END, CUSTOM
     min_radius: 500
     max_radius: 15000
-    cooldown: 300
+    cooldown: 300           #  Per-world cooldown!
     cost: 50.0
     
   world_nether:
@@ -183,7 +188,69 @@ worlds:
     type: NETHER
     min_y: 32               # Safe nether Y-level
     max_y: 120
+    cooldown: 180           # Nether has shorter cooldown!
 ```
+
+**Radius-Based Pricing System**
+
+Charge different prices based on the teleport radius chosen by the player:
+
+```yaml
+custom_worlds:
+  world:
+    cost: 100.0             # Base cost (always charged)
+    
+    # Radius-based pricing (optional)
+    radius_pricing:
+      enabled: true
+      tiers:
+        tier1:
+          max_radius: 5000   # Small radius
+          cost: 0.0          # No extra charge
+        tier2:
+          max_radius: 15000  # Medium radius
+          cost: 250.0        # +$250 extra
+        tier3:
+          max_radius: 25000  # Large radius
+          cost: 500.0        # +$500 extra
+```
+
+**Example costs:**
+- `/rtp` (default) → $100 (base only)
+- `/rtp 5000` → $100 (base + tier1)
+- `/rtp 15000` → $350 (base + tier2)
+- `/rtp 20000` → $600 (base + tier3)
+
+**Per-World Cooldown System:**
+
+Each world has **independent** cooldowns! Players can teleport between worlds without waiting:
+
+```yaml
+custom_worlds:
+  world:
+    cooldown: 900           # 15 minutes for overworld
+    cost: 150.0
+    
+  world_nether:
+    cooldown: 300           # 5 minutes for nether
+    cost: 300.0
+    
+  world_the_end:
+    cooldown: 900           # 15 minutes for end
+    cost: 500.0
+```
+
+**Example gameplay:**
+1. Player types `/rtp world_the_end` → Teleports successfully (15min cooldown for world_the_end)
+2. Player types `/rtp world_nether` → Teleports successfully (5min cooldown for world_nether)
+3. Player types `/rtp world` → Teleports successfully (15min cooldown for world)
+4. Player types `/rtp world_the_end` → Blocked! (cooldown still active for world_the_end)
+
+**Benefits:**
+- ✅ Explore multiple dimensions without global cooldown
+- ✅ Each world has appropriate cooldown settings
+- ✅ Better gameplay flow and player freedom
+- ✅ Works with PlaceholderAPI for per-world displays
 
 **Automation Features:**
 ```yaml
@@ -244,7 +311,7 @@ Dynamic arena-style zones for automated group teleports with synchronized countd
    - Optional: Custom spread radius for grouped players
    - Optional: Hologram location (stand where you want it and confirm)
 
-4. **Automatic Hologram Creation (NEW 3.2.9):**
+4. **Automatic Hologram Creation**
    - If you set a hologram location, it's automatically created
    - Engine is auto-selected based on `preferred-engine` setting
    - Hologram renders instantly with countdown
@@ -271,10 +338,10 @@ Dynamic arena-style zones for automated group teleports with synchronized countd
   - **Title messages**: Large countdown display (5s, 4s, 3s...)
   - **Action bar**: Persistent countdown timer
   - **Holograms**: Optional floating countdown display with 3 engine options:
-    - **FancyHolograms** (NEW 3.2.9): Beautiful, persistent holograms with MiniMessage support
+    - **FancyHolograms** Beautiful, persistent holograms with MiniMessage support
     - **PacketEvents**: High-performance packet-based holograms
     - **Display Entities**: Native vanilla entities, no dependencies
-- **NEW 3.2.6**: Smart multi-player teleportation with automatic spreading
+- Smart multi-player teleportation with automatic spreading
   - Each player gets a unique, safe location
   - Configurable spread distance prevents clustering
   - Optimized for Folia's multi-threaded regions
@@ -283,21 +350,21 @@ Dynamic arena-style zones for automated group teleports with synchronized countd
 - Particle effects on teleportation
 
 **Zone Management:**
-- **NEW 3.2.9**: Automatic hologram creation on zone setup
+- Automatic hologram creation on zone setup
   - No manual `/rtpzone sethologram` required
   - Holograms auto-select best available engine
   - Instant rendering on creation (no delays)
 - Cross-server destination support via MySQL sync
 - Customizable teleport intervals per zone
 - Individual player opt-out: `/rtpzone ignore`
-- **NEW 3.2.6**: Advanced multi-player teleportation system
+- Advanced multi-player teleportation system
   - Each player gets a unique location (no more same-spot spawns!)
   - Configurable min/max spread distance between players
   - Per-zone spread settings override global defaults
   - Full dimension safety (nether Y < 127, end islands, etc.)
 - Automatic zone sync across network servers
 
-**Hologram System (NEW 3.2.9 - Complete Overhaul):**
+**Hologram System**
 - **3-Engine Architecture** with intelligent fallback:
   - **FancyHolograms**: Premium visuals, persistent storage, player-editable
   - **PacketEvents**: High performance, packet-based rendering
@@ -309,7 +376,7 @@ Dynamic arena-style zones for automated group teleports with synchronized countd
   - `entity` - Force vanilla Display Entities
 - **Auto-Creation**: Holograms automatically created when zone is set up
 - **Instant Rendering**: No delays, holograms appear immediately on all engines
-- **FancyHolograms Persistence** (NEW):
+- **FancyHolograms Persistence**:
   - Holograms saved to FancyHolograms storage
   - Visible in `/fholo list` for server admins
   - Players can edit holograms via FancyHolograms commands
@@ -343,7 +410,7 @@ zones:
     min-radius: 1000          # Min distance from world spawn
     max-radius: 10000         # Max distance from world spawn
     
-    # NEW 3.2.6: Player spread configuration
+    # Player spread configuration
     min-spread-distance: 10   # Minimum blocks between players
     max-spread-distance: 50   # Maximum blocks between players
     
@@ -373,7 +440,7 @@ zone_teleport_settings:
 
 **`holograms.yml`:**
 ```yaml
-# Preferred Hologram Engine (NEW 3.2.9)
+# Preferred Hologram Engine
 # Options: auto, fancyholograms, packetevents, entity
 preferred-engine: auto
 
@@ -401,7 +468,7 @@ hologram-settings:
   # <#FF5733>Custom Hex</#FF5733> - Custom hex colors
 ```
 
-**FancyHolograms Integration (NEW 3.2.9):**
+**FancyHolograms Integration**
 When FancyHolograms is installed and `preferred-engine` is `auto` or `fancyholograms`:
 - Holograms are **persistent** - saved to FancyHolograms database
 - Visible in `/fholo list` with naming format: `justrtp_zone_<zoneid>`
@@ -432,7 +499,7 @@ For cross-server zones, zones automatically sync via MySQL:
 
 ---
 
-## Hologram Engine System (NEW 3.2.9)
+## Hologram Engine System
 
 JustRTP features a sophisticated 3-tier hologram engine system with automatic fallback and intelligent engine selection.
 
@@ -493,7 +560,7 @@ preferred-engine: auto
 
 ### Hologram Lifecycle
 
-**Automatic Creation (NEW 3.2.9):**
+**Automatic Creation**
 - Holograms are automatically created when zone is set up
 - No manual `/rtpzone sethologram` command needed
 - Engine is auto-selected based on `preferred-engine` setting
@@ -648,7 +715,8 @@ hologram-settings:
 
 | Permission | Description | Default |
 |------------|-------------|---------|
-| `justrtp.bypass.cooldown` | Skip cooldown timers | OP |
+| `justrtp.cooldown.bypass` | Skip cooldown timers | OP |
+| `justrtp.bypass.cooldown` | Legacy cooldown bypass (deprecated) | OP |
 | `justrtp.bypass.delay` | Skip teleport delays | OP |
 | `justrtp.bypass.cost` | Skip economy costs | OP |
 
@@ -700,7 +768,7 @@ Players receive the settings from the highest priority group they have access to
 
 All placeholders support per-player context and world-specific settings:
 
-### World-Specific Placeholder Support (NEW)
+### World-Specific Placeholder Support
 
 **Format**: `%justrtp_<placeholder>_<worldname>%`
 
@@ -764,7 +832,7 @@ scoreboard:
 
 ### RTP Zone Placeholders
 
-**NEW in 3.2.6**: Zone system placeholders for FancyHolograms, scoreboards, and other plugins.
+Zone system placeholders for FancyHolograms, scoreboards, and other plugins.
 
 | Placeholder | Description | Example Output |
 |------------|-------------|----------------|
@@ -954,7 +1022,7 @@ JustRTP is fully compatible with Folia's regionized threading:
 - Verify target server is online
 
 **Holograms not displaying countdown**
-- **NEW 3.2.9**: Install FancyHolograms for best visuals and persistence
+- Install FancyHolograms for best visuals and persistence
 - Alternative: Install PacketEvents for high-performance holograms
 - Fallback: Display Entities work without any dependencies
 - Check `preferred-engine` setting in `holograms.yml`
@@ -1003,7 +1071,7 @@ If you encounter issues not covered here:
 
 | Component | Details |
 |-----------|---------|
-| **Plugin Version** | 3.2.9 |
+| **Plugin Version** | 3.3.1 |
 | **Minecraft Version** | 1.21+ (1.21.4 tested) |
 | **Server Software** | Paper, Folia, Spigot |
 | **Java Version** | 21+ required |
@@ -1025,12 +1093,12 @@ If you encounter issues not covered here:
 | WorldGuard Regions | ✅ Available | WorldGuard |
 | Redis Caching | ✅ Available | Redis |
 | Folia Support | ✅ Full Support | Folia |
-| FancyHolograms Integration | ✅ Available (NEW 3.2.9) | FancyHolograms 2.8.0+ |
+| FancyHolograms Integration | ✅ Available (3.2.9+) | FancyHolograms 2.8.0+ |
 | PacketEvents Holograms | ✅ Available | PacketEvents |
 | Display Entity Holograms | ✅ Available (Fallback) | None |
-| Auto Hologram Creation | ✅ Available (NEW 3.2.9) | None |
-| Persistent Holograms | ✅ Available (NEW 3.2.9) | FancyHolograms |
-| Hologram Live Reload | ✅ Available (NEW 3.2.9) | None |
+| Auto Hologram Creation | ✅ Available (3.2.9+) | None |
+| Persistent Holograms | ✅ Available (3.2.9+) | FancyHolograms |
+| Hologram Live Reload | ✅ Available (3.2.9+) | None |
 | Location Caching | ✅ Available | None |
 | Permission Groups | ✅ Available | None |
 | Auto-RTP (Join/Respawn) | ✅ Available | None |
@@ -1042,98 +1110,23 @@ If you encounter issues not covered here:
 
 ## Changelog
 
-### Version 3.2.9 (Current)
+### Version 3.3.1 (Current)
 
-**API & Compatibility Updates:**
-- ✅ Updated to Paper API 1.21.4 (supports 1.21, 1.21.1, 1.21.2, 1.21.3, 1.21.4)
-- ✅ Updated PlaceholderAPI to 2.11.6 for better compatibility
-- ✅ Changed Java requirement to Java 21+ (matches Paper 1.21+)
-- ✅ Updated plugin API version to 1.21
-- ✅ Fully tested and verified on Paper/Folia/Spigot 1.21.4
+**Quality of Life Improvements:**
+- ⏱️ **Human-Readable Time Formatting**: All time displays now show "5m 38s" instead of "338 seconds"
+  - Affects cooldowns, delays, holograms, and all time-based messages
+- 👑 **OP/Permission Cooldown Bypass**: OP players and those with `justrtp.cooldown.bypass` permission skip cooldowns
+  - Automatic bypass for OP status
+  - Works for both proxy and local teleports
+- 🔇 **Empty Message Suppression**: Hide any message by setting it to `""` in messages.yml
+  - Set `message: ""` to completely suppress (no blank lines)
+  - Distinguishes between missing keys (warning) and disabled messages (silent)
+- 💰 **Radius-Based Pricing System**: Charge different prices based on teleport radius
+  - Configure tier-based pricing per world
+  - Example: radius 5000 = $100, radius 15000 = $350, radius 20000 = $600
+  - Costs are additive (base cost + radius tier cost)
+  - Fully compatible with existing permission group pricing
 
-**PlaceholderAPI Enhancements:**
-- 🎯 **World-Specific Placeholders**: New format `%justrtp_<placeholder>_<worldname>%`
-  - Get cooldowns for specific worlds: `%justrtp_cooldown_world_nether%`
-  - Get costs for specific worlds: `%justrtp_cost_world%`
-  - Get delays for specific worlds: `%justrtp_delay_world_the_end%`
-  - Get radius settings per world: `%justrtp_min_radius_world%`, `%justrtp_max_radius_world_nether%`
-- 🔧 **Per-World Permission Groups**: Configure different cooldowns/costs per world
-  ```yaml
-  permission_groups:
-    vip:
-      worlds:
-        world:
-          cooldown: 60
-        world_nether:
-          cooldown: 20
-        world_the_end:
-          cooldown: 10
-  ```
-- 🐛 **Fixed PlaceholderAPI Registration**: Improved error handling and debug logging
-- ⚡ **Better Performance**: Optimized placeholder parsing with world name extraction
-
-**Zone System Updates:**
-- 🎬 **Every-Second Countdown**: Zone warnings now show at every second (30, 29, 28...) instead of every 5 seconds
-- 💬 Action bar messages updated every second for better player feedback
-- 🔊 Sound effects still play only at countdown 3, 2, 1 to avoid spam
-
-**Bug Fixes:**
-- Fixed PlaceholderAPI not recognizing placeholders (Issue #2)
-- Fixed placeholder errors when ConfigManager is null
-- Added proper debug mode support in PlaceholderAPI expansion
-- Improved error messages for invalid world names in placeholders
-
-**Documentation Updates:**
-- 📖 Comprehensive PlaceholderAPI documentation with world-specific examples
-- 📝 Per-world cooldown configuration examples in config.yml
-- 🎯 Updated technical specifications for 1.21.4 compatibility
-- ✨ Added scoreboard/GUI integration examples
-
-### Version 3.2.8
-
-**Major Features:**
-- ✨ **FancyHolograms Integration**: Full support for FancyHolograms 2.8.0+
-  - Persistent holograms that survive server restarts
-  - Visible in `/fholo list` for admin management
-  - Player-editable via FancyHolograms commands
-  - Automatic cleanup on zone deletion
-- 🎨 **3-Tier Hologram Engine System**:
-  - FancyHolograms (persistent, premium visuals)
-  - PacketEvents (high performance)
-  - Display Entities (universal fallback)
-- ⚙️ **Hologram Engine Selection**: New `preferred-engine` config option
-  - `auto` - Smart detection with priority fallback
-  - `fancyholograms` - Force FancyHolograms
-  - `packetevents` - Force PacketEvents
-  - `entity` - Force Display Entities
-- 🚀 **Automatic Hologram Creation**: Zones auto-create holograms on setup
-- ⚡ **Instant Rendering**: All hologram engines render immediately (no delays)
-- 🔄 **Live Reload Support**: Update hologram templates via `/rtp reload`
-- 💾 **Template Caching System**: Zero config I/O during updates (85% performance boost)
-
-**Bug Fixes:**
-- Fixed hologram registration bug (missing addHologram call)
-- Fixed countdown stuck at "0s" issue
-- Fixed excessive config file reads during hologram updates
-- Fixed persistent holograms not being removed on zone deletion
-
-**Improvements:**
-- Enhanced zone creation workflow with auto-hologram setup
-- Improved debug logging for hologram lifecycle tracking
-- Better error handling for missing hologram engines
-- Optimized hologram update performance
-
-### Version 3.2.6
-
-**Major Features:**
-- Smart multi-player zone teleportation with automatic spreading
-- Configurable min/max spread distance per zone
-- Each player gets unique safe location (no clustering)
-- Full dimension safety (nether, end, overworld)
-
-**Bug Fixes:**
-- Fixed race condition in multi-player zone teleports
-- Improved Folia compatibility for zone schedulers
 
 ---
 
