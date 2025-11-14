@@ -16,8 +16,8 @@
 </p>
 
 <p align="center">
-<a href="https://discord.gg/your-invite-code">
-<img src="https://img.shields.io/discord/YOUR_SERVER_ID?color=5865F2&label=Discord&logo=discord&logoColor=white&style=for-the-badge" alt="Discord" />
+<a href="https://discord.gg/HRjcmEYXNy">
+<img src="https://img.shields.io/discord/1389677354753720352?color=5865F2&label=Discord&logo=discord&logoColor=white&style=for-the-badge" alt="Discord" />
 </a>
 </p>
 
@@ -1134,7 +1134,7 @@ If you encounter issues not covered here:
 
 **JustRTP** is developed and maintained with care by **kotori**.
 
-This plugin is open-source software, licensed under the MIT License.
+This plugin is open-source software, licensed under the CC BY-NC-SA 4.0 License
 
 ---
 
