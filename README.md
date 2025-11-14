@@ -1078,7 +1078,7 @@ If you encounter issues not covered here:
 | **API Version** | 1.21 |
 | **Database Support** | MySQL 8.0+, Redis (optional) |
 | **Dependencies** | Vault, PlaceholderAPI, WorldGuard, FancyHolograms, PacketEvents (all optional) |
-| **License** | MIT |
+| **License** | CC BY-NC-SA 4.0 |
 | **Author** | kotori |
 
 ### Feature Matrix
