@@ -33,6 +33,11 @@ public class EffectsManager {
     public EffectsManager(JustRTP plugin) {
         this.plugin = plugin;
     }
+    
+    public void reload() {
+        plugin.getLogger().info("EffectsManager reloaded - new sound, title, and transition_effects settings will apply");
+    }
+    
     public void applyPostTeleportEffects(Player player) {
         if (!player.isOnline()) return;
         removeTransitionEffects(player);
@@ -57,15 +62,19 @@ public class EffectsManager {
         }
     }
 
-    public void sendQueueActionBar(Player player, String server, int time) {
+    public void sendQueueActionBar(Player player, String server, int elapsedSeconds, int remainingSeconds, int totalSeconds) {
         ConfigurationSection cs = plugin.getConfig().getConfigurationSection("effects.queue_action_bar");
         if (cs == null || !cs.getBoolean("enabled", false)) return;
         String format = cs.getString("text", "<yellow>Searching on <server>... (<gold><time>s</gold>)<yellow>");
         if(format.isBlank()) return;
-        player.sendActionBar(mm.deserialize(format,
-                Placeholder.unparsed("server", server),
-                Placeholder.unparsed("time", String.valueOf(time))
-        ));
+    player.sendActionBar(mm.deserialize(format,
+        Placeholder.unparsed("server", server),
+        Placeholder.unparsed("time", eu.kotori.justRTP.utils.TimeUtils.formatDuration(elapsedSeconds)),
+        Placeholder.unparsed("elapsed", eu.kotori.justRTP.utils.TimeUtils.formatDuration(elapsedSeconds)),
+        Placeholder.unparsed("remaining", eu.kotori.justRTP.utils.TimeUtils.formatDuration(remainingSeconds)),
+        Placeholder.unparsed("total", eu.kotori.justRTP.utils.TimeUtils.formatDuration(totalSeconds)),
+        Placeholder.unparsed("countdown", eu.kotori.justRTP.utils.TimeUtils.formatDuration(remainingSeconds))
+    ));
     }
 
     public void clearActionBar(Player player) {
@@ -159,12 +168,108 @@ public class EffectsManager {
     }
     private void applySound(Player player, ConfigurationSection cs) {
         if (cs == null || !cs.getBoolean("enabled", false)) return;
-        try {
-            Sound sound = Sound.valueOf(cs.getString("name", "ENTITY_PLAYER_LEVELUP").toUpperCase());
-            player.playSound(player.getLocation(), sound, (float) cs.getDouble("volume", 1.0), (float) cs.getDouble("pitch", 1.2));
-        } catch (IllegalArgumentException e) {
-            plugin.getLogger().warning("Invalid Sound name in config.yml.");
+        String configSoundName = cs.getString("name", "ENTITY_PLAYER_LEVEL_UP");
+        if (configSoundName == null || configSoundName.trim().isEmpty()) {
+            configSoundName = "ENTITY_PLAYER_LEVEL_UP";
         }
+        String soundName = configSoundName.trim().toUpperCase();
+        Sound sound = null;
+        
+        java.util.List<String> soundVariants = new java.util.ArrayList<>();
+        soundVariants.add(soundName);
+        
+        String noUnderscores = soundName.replace("_", "");
+        soundVariants.add(noUnderscores); 
+        
+        soundVariants.add(noUnderscores.replaceAll("(?<!^)(?=[A-Z])", "_"));
+        
+        if (soundName.contains("_")) {
+            String[] parts = soundName.split("_");
+            
+            if (parts.length >= 2) {
+                StringBuilder merged = new StringBuilder();
+                for (int i = 0; i < parts.length - 2; i++) {
+                    if (i > 0) merged.append("_");
+                    merged.append(parts[i]);
+                }
+                if (parts.length > 2) merged.append("_");
+                merged.append(parts[parts.length - 2]).append(parts[parts.length - 1]);
+                soundVariants.add(merged.toString());
+            }
+            
+            String lastPart = parts[parts.length - 1];
+            String smartSplit = splitCompoundWord(lastPart);
+            if (!smartSplit.equals(lastPart)) {
+                StringBuilder withSplit = new StringBuilder();
+                for (int i = 0; i < parts.length - 1; i++) {
+                    if (i > 0) withSplit.append("_");
+                    withSplit.append(parts[i]);
+                }
+                if (parts.length > 1) withSplit.append("_");
+                withSplit.append(smartSplit);
+                soundVariants.add(withSplit.toString());
+            }
+        }
+
+        plugin.debug("Attempting to find sound '" + configSoundName + "', trying " + soundVariants.size() + " variants");
+
+        for (String variant : soundVariants) {
+            if (sound != null) break;
+            
+            try {
+                sound = Sound.valueOf(variant);
+                if (sound != null) {
+                    plugin.debug("Found sound '" + variant + "' via Sound.valueOf()");
+                }
+            } catch (IllegalArgumentException e) {
+            }
+            
+            if (sound == null) {
+                try {
+                    String registryKey = variant.toLowerCase().replace("_", ".");
+                    org.bukkit.NamespacedKey key = org.bukkit.NamespacedKey.minecraft(registryKey);
+                    sound = org.bukkit.Registry.SOUNDS.get(key);
+                    if (sound != null) {
+                        plugin.debug("Found sound '" + variant + "' via Registry API (key: " + registryKey + ")");
+                    }
+                } catch (Throwable e) {
+                }
+            }
+
+            if (sound == null) {
+                try {
+                    org.bukkit.NamespacedKey key = org.bukkit.NamespacedKey.minecraft(variant.toLowerCase());
+                    sound = org.bukkit.Registry.SOUNDS.get(key);
+                    if (sound != null) {
+                        plugin.debug("Found sound '" + variant + "' via Registry API (underscore key)");
+                    }
+                } catch (Throwable e) {
+                }
+            }
+        }
+
+        if (sound != null) {
+            try {
+                float volume = (float) cs.getDouble("volume", 1.0);
+                float pitch = (float) cs.getDouble("pitch", 1.2);
+                player.playSound(player.getLocation(), sound, volume, pitch);
+                plugin.debug("Successfully played sound: " + sound);
+            } catch (Exception e) {
+                plugin.getLogger().warning("Error playing sound: " + soundName + " - " + e.getMessage());
+            }
+        } else {
+            plugin.getLogger().warning("Invalid Sound name in config.yml: " + configSoundName + " (tried variants: " + soundVariants + ")");
+        }
+    }
+    
+    private String splitCompoundWord(String word) {
+        String[] commonSuffixes = {"UP", "DOWN", "IN", "OUT", "ON", "OFF", "ORB"};
+        for (String suffix : commonSuffixes) {
+            if (word.endsWith(suffix) && word.length() > suffix.length()) {
+                return word.substring(0, word.length() - suffix.length()) + "_" + suffix;
+            }
+        }
+        return word;
     }
     public void removeBossBar(Player player) {
         if (activeBossBars.containsKey(player.getUniqueId())) {

@@ -1,8 +1,10 @@
 package eu.kotori.justRTP.commands;
 
 import eu.kotori.justRTP.JustRTP;
+import eu.kotori.justRTP.events.PlayerRTPEvent;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
+import eu.kotori.justRTP.utils.TimeUtils;
 import org.bukkit.Bukkit;
 import org.bukkit.World;
 import org.bukkit.command.Command;
@@ -49,6 +51,7 @@ public class RTPCommand implements CommandExecutor {
                 case "proxystatus": handleProxyStatus(sender); return true;
                 case "confirm": handleConfirm(sender); return true;
                 case "help": handleHelp(sender); return true;
+                case "location": handleLocation(sender, args); return true;
             }
         }
 
@@ -167,7 +170,44 @@ public class RTPCommand implements CommandExecutor {
         }
 
         if (targetWorld == null && targetServer == null) {
-            targetWorld = targetPlayer.getWorld();
+            String configuredDefaultWorld = plugin.getConfig().getString("settings.default_world", "").trim();
+
+            if (!configuredDefaultWorld.isEmpty()) {
+                if (sender instanceof Player p && p.hasPermission("justrtp.bypass.default_world")) {
+                    targetWorld = targetPlayer.getWorld();
+                } else {
+                    World defaultWorldObj = Bukkit.getWorld(configuredDefaultWorld);
+                    if (defaultWorldObj != null) {
+                        targetWorld = defaultWorldObj;
+                    } else {
+                        plugin.debug("Configured default RTP world not found: " + configuredDefaultWorld + ", falling back to player world");
+                        targetWorld = targetPlayer.getWorld();
+                    }
+                }
+            } else {
+                targetWorld = targetPlayer.getWorld();
+            }
+        }
+
+        if (targetWorld != null && plugin.getConfigManager().isSpawnRedirectEnabled()) {
+            String spawnWorldName = plugin.getConfigManager().getSpawnWorldName();
+            String redirectTargetWorldName = plugin.getConfigManager().getSpawnRedirectTargetWorld();
+            
+            if (targetWorld.getName().equalsIgnoreCase(spawnWorldName) && args.length == 0) {
+                World redirectWorld = Bukkit.getWorld(redirectTargetWorldName);
+                if (redirectWorld != null) {
+                    targetWorld = redirectWorld;
+                    plugin.debug("Spawn redirect: " + spawnWorldName + " -> " + redirectTargetWorldName);
+                    
+                    if (plugin.getConfigManager().shouldNotifySpawnRedirect() && sender instanceof Player) {
+                        plugin.getLocaleManager().sendMessage(sender, "spawn_redirect.redirected", 
+                            Placeholder.unparsed("from_world", spawnWorldName),
+                            Placeholder.unparsed("to_world", redirectTargetWorldName));
+                    }
+                } else {
+                    plugin.debug("Spawn redirect target world not found: " + redirectTargetWorldName);
+                }
+            }
         }
 
         if (targetWorld != null && targetServer != null) {
@@ -220,15 +260,22 @@ public class RTPCommand implements CommandExecutor {
             return CompletableFuture.completedFuture(false);
         }
 
-        long remainingCooldown = plugin.getCooldownManager().getRemaining(target.getUniqueId());
-        if (remainingCooldown > 0) {
-            plugin.getLocaleManager().sendMessage(target, "teleport.cooldown", Placeholder.unparsed("time", String.valueOf(remainingCooldown)));
-            return CompletableFuture.completedFuture(false);
+        String worldName = target.getWorld().getName();
+        if (!target.isOp() && !target.hasPermission("justrtp.cooldown.bypass")) {
+            long remainingCooldown = plugin.getCooldownManager().getRemaining(target.getUniqueId(), worldName);
+            if (remainingCooldown > 0) {
+                plugin.getLocaleManager().sendMessage(target, "teleport.cooldown", Placeholder.unparsed("time", TimeUtils.formatDuration(remainingCooldown)));
+                return CompletableFuture.completedFuture(false);
+            }
         }
 
-        int cooldown = plugin.getConfigManager().getCooldown(target, target.getWorld());
-        plugin.getCooldownManager().setCooldown(target.getUniqueId(), cooldown);
-        plugin.debug("Set cooldown for " + target.getName() + ": " + cooldown + " seconds");
+        if (!target.isOp() && !target.hasPermission("justrtp.cooldown.bypass")) {
+            int cooldown = plugin.getConfigManager().getCooldown(target, target.getWorld());
+            plugin.getCooldownManager().setCooldown(target.getUniqueId(), worldName, cooldown);
+            plugin.debug("Set cooldown for " + target.getName() + " in world " + worldName + ": " + cooldown + " seconds");
+        } else {
+            plugin.debug("Skipped proxy cooldown for " + target.getName() + " (OP or bypass permission)");
+        }
 
         String serverAlias = plugin.getConfigManager().getProxyServerAlias(parsed.targetServer());
         plugin.getLocaleManager().sendMessage(sender, "proxy.searching", Placeholder.unparsed("server", serverAlias));
@@ -265,15 +312,47 @@ public class RTPCommand implements CommandExecutor {
         }
 
         if (!(sender instanceof ConsoleCommandSender) && !crossServerNoDelay) {
-            long remainingCooldown = plugin.getCooldownManager().getRemaining(targetPlayer.getUniqueId());
-            if (remainingCooldown > 0) {
-                plugin.getLocaleManager().sendMessage(sender, "teleport.cooldown", Placeholder.unparsed("time", String.valueOf(remainingCooldown)));
-                return CompletableFuture.completedFuture(false);
+            if (!targetPlayer.isOp() && !targetPlayer.hasPermission("justrtp.cooldown.bypass")) {
+                String worldName = targetWorld.getName();
+                long remainingCooldown = plugin.getCooldownManager().getRemaining(targetPlayer.getUniqueId(), worldName);
+                if (remainingCooldown > 0) {
+                    plugin.getLocaleManager().sendMessage(sender, "teleport.cooldown", Placeholder.unparsed("time", TimeUtils.formatDuration(remainingCooldown)));
+                    return CompletableFuture.completedFuture(false);
+                }
             }
         }
 
         double cost = plugin.getConfigManager().getEconomyCost(targetPlayer, targetWorld);
+        
+        if (parsed.maxRadius().isPresent()) {
+            double radiusCost = plugin.getConfigManager().getRadiusBasedCost(targetWorld, parsed.maxRadius().get());
+            cost += radiusCost;
+        }
+        
         final double finalCost = Math.max(0, cost);
+        
+        PlayerRTPEvent rtpEvent = new PlayerRTPEvent(
+            targetPlayer, 
+            targetWorld, 
+            parsed.minRadius().orElse(null), 
+            parsed.maxRadius().orElse(null),
+            finalCost,
+            false, 
+            null
+        );
+        Bukkit.getPluginManager().callEvent(rtpEvent);
+        
+        if (rtpEvent.isCancelled()) {
+            plugin.debug("PlayerRTPEvent was cancelled by another plugin for " + targetPlayer.getName());
+            return CompletableFuture.completedFuture(false);
+        }
+        
+        World eventTargetWorld = rtpEvent.getTargetWorld();
+        if (!eventTargetWorld.equals(targetWorld)) {
+            plugin.debug("Target world changed by PlayerRTPEvent: " + targetWorld.getName() + " -> " + eventTargetWorld.getName());
+            targetWorld = eventTargetWorld;
+        }
+        
         boolean requireConfirmation = plugin.getConfig().getBoolean("economy.require_confirmation", true);
 
         if (plugin.getConfig().getBoolean("economy.enabled") && finalCost > 0 && plugin.getVaultHook().hasEconomy()) {
@@ -332,10 +411,16 @@ public class RTPCommand implements CommandExecutor {
             }
 
             if (!(sender instanceof ConsoleCommandSender) && !crossServerNoDelay) {
-                plugin.getCooldownManager().setCooldown(targetPlayer.getUniqueId(), cooldown);
+                if (!targetPlayer.isOp() && !targetPlayer.hasPermission("justrtp.cooldown.bypass")) {
+                    String worldName = targetWorld.getName();
+                    plugin.getCooldownManager().setCooldown(targetPlayer.getUniqueId(), worldName, cooldown);
+                    plugin.debug("Set per-world cooldown for " + targetPlayer.getName() + " in " + worldName + ": " + cooldown + "s");
+                } else {
+                    plugin.debug("Skipped cooldown for " + targetPlayer.getName() + " (OP or bypass permission)");
+                }
             }
 
-            plugin.getTeleportQueueManager().requestTeleport(targetPlayer, targetWorld, parsed.minRadius(), parsed.maxRadius())
+            plugin.getTeleportQueueManager().requestTeleport(targetPlayer, targetWorld, parsed.minRadius(), parsed.maxRadius(), cost)
                     .thenAccept(future::complete);
         }, delay);
         return future;
@@ -473,6 +558,7 @@ public class RTPCommand implements CommandExecutor {
         sender.sendMessage(mm.deserialize("  <white>/rtp <player>           <dark_gray>→ <gray>Teleport another player"));
         sender.sendMessage(mm.deserialize("  <white>/rtp <radius>           <dark_gray>→ <gray>Custom max radius"));
         sender.sendMessage(mm.deserialize("  <white>/rtp <min> <max>        <dark_gray>→ <gray>Custom min/max radius"));
+        sender.sendMessage(mm.deserialize("  <white>/rtp location <gold><name>  <dark_gray>→ <gray>Teleport to custom location"));
         sender.sendMessage(mm.deserialize(""));
         sender.sendMessage(mm.deserialize("<green><b>Special Commands:</b>"));
         sender.sendMessage(mm.deserialize("  <white>/rtp confirm            <dark_gray>→ <gray>Confirm paid teleport"));
@@ -480,6 +566,26 @@ public class RTPCommand implements CommandExecutor {
         sender.sendMessage(mm.deserialize("  <white>/rtp reload             <dark_gray>→ <gray>Reload configuration <gray>(admin)"));
         sender.sendMessage(mm.deserialize(""));
         sender.sendMessage(mm.deserialize("<gradient:#20B2AA:#7FFFD4>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</gradient>"));
+    }
+
+    private void handleLocation(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player player)) {
+            plugin.getLocaleManager().sendMessage(sender, "command.player_only");
+            return;
+        }
+
+        if (!sender.hasPermission("justrtp.command.rtp.location")) {
+            plugin.getLocaleManager().sendMessage(sender, "command.no_permission");
+            return;
+        }
+
+        if (args.length < 2) {
+            plugin.getLocaleManager().sendMessage(sender, "custom_locations.usage");
+            return;
+        }
+
+        String locationName = args[1].toLowerCase();
+        plugin.getCustomLocationManager().teleportToLocation(player, locationName);
     }
 
     private void handleReload(CommandSender sender) {

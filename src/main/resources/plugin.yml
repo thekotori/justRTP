@@ -1,11 +1,11 @@
 name: JustRTP
-version: 3.2.7
+version: 3.3.2
 main: eu.kotori.justRTP.JustRTP
-api-version: '1.20'
+api-version: '1.21'
 author: kotori
 description: A highly optimized and safe Random Teleport plugin with Folia, Velocity, and MySQL support.
 folia-supported: true
-softdepend: [Vault, PlaceholderAPI, WorldGuard, packetevents]
+softdepend: [Vault, PlaceholderAPI, WorldGuard, KingdomsX, Kingdoms, TownsAndNations, packetevents, FancyHolograms]
 commands:
   justrtp:
     description: Randomly teleports a player with advanced options.
@@ -37,6 +37,9 @@ permissions:
   justrtp.command.rtp.radius:
     description: Allows specifying a custom min/max radius for a teleport.
     default: op
+  justrtp.command.rtp.location:
+    description: Allows using the /rtp location command for custom locations.
+    default: true
   justrtp.command.reload:
     description: Allows use of the /rtp reload command.
     default: op
@@ -57,6 +60,15 @@ permissions:
     default: op
   justrtp.cost.bypass:
     description: Bypasses the teleport cost if economy is enabled.
+    default: op
+  justrtp.jumprtp:
+    description: Allows using the Jump RTP feature.
+    default: true
+  justrtp.jumprtp.bypass:
+    description: Bypasses the Jump RTP cooldown.
+    default: op
+  justrtp.location.*:
+    description: Wildcard permission for all custom locations. (e.g., justrtp.location.europe)
     default: op
   justrtp.group.*:
     description: Wildcard permission for all permission groups. (e.g., justrtp.group.vip)

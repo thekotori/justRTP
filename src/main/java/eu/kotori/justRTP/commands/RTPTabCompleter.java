@@ -25,13 +25,27 @@ public class RTPTabCompleter implements TabCompleter {
         Set<String> options = new HashSet<>();
 
         if (args.length == 1) {
+            options.add("help");
+            
             if (sender.hasPermission("justrtp.command.reload")) options.add("reload");
             if (sender.hasPermission("justrtp.admin")) options.add("proxystatus");
-            if (sender.hasPermission("justrtp.command.confirm")) options.add("confirm");
+            
+            boolean economyEnabled = plugin.getConfig().getBoolean("economy.enabled", false);
+            if (economyEnabled && sender.hasPermission("justrtp.command.confirm")) {
+                options.add("confirm");
+            }
+            
+            if (sender.hasPermission("justrtp.command.rtp.location")) options.add("location");
 
             boolean creditsPermissionRequired = plugin.getConfig().getBoolean("settings.credits_command_requires_permission", true);
             if (!creditsPermissionRequired || sender.hasPermission("justrtp.command.credits")) {
                 options.add("credits");
+            }
+        }
+
+        if (args.length == 2 && args[0].equalsIgnoreCase("location")) {
+            if (sender instanceof Player player && sender.hasPermission("justrtp.command.rtp.location")) {
+                options.addAll(plugin.getCustomLocationManager().getAvailableLocationIds(player));
             }
         }
 

@@ -34,7 +34,16 @@ public class HologramManager {
     private final String HOLOGRAM_METADATA_KEY = "justrtp_hologram";
     
     private PacketHologramManager packetHologramManager;
+    private FancyHologramManager fancyHologramManager;
     private boolean usePacketEvents = false;
+    private boolean useFancyHolograms = false;
+    private HologramType hologramType = HologramType.DISPLAY_ENTITY;
+
+    private enum HologramType {
+        DISPLAY_ENTITY,
+        PACKET_EVENTS,
+        FANCY_HOLOGRAMS
+    }
 
     private static class HologramInstance {
         final List<TextDisplay> displays;
@@ -49,25 +58,6 @@ public class HologramManager {
         this.plugin = plugin;
         this.displayEntitiesFile = new File(plugin.getDataFolder(), "display_entities.yml");
         
-        try {
-            if (Bukkit.getPluginManager().isPluginEnabled("packetevents")) {
-                this.packetHologramManager = new PacketHologramManager(plugin);
-                this.usePacketEvents = packetHologramManager.isPacketEventsAvailable();
-                
-                if (usePacketEvents) {
-                    plugin.getLogger().info("PacketEvents detected! Using high-performance packet-based holograms.");
-                    Bukkit.getPluginManager().registerEvents(packetHologramManager, plugin);
-                }
-            }
-        } catch (Exception e) {
-            plugin.getLogger().warning("Failed to initialize PacketEvents holograms: " + e.getMessage());
-            plugin.debug("Error details: " + e.toString());
-            this.usePacketEvents = false;
-        }
-        
-        if (!usePacketEvents) {
-            plugin.debug("Using entity-based holograms (Display entities).");
-        }
     }
 
     public void initialize() {
@@ -78,13 +68,149 @@ public class HologramManager {
         hologramsConfig = YamlConfiguration.loadConfiguration(configFile);
         loadDisplayEntities();
         
+        String preferredEngine = hologramsConfig.getString("preferred-engine", "auto").toLowerCase();
+        plugin.debug("Preferred hologram engine: " + preferredEngine);
+        
+        initializeHologramEngines(preferredEngine);
+        
+        if (useFancyHolograms && fancyHologramManager != null) {
+            fancyHologramManager.setHologramsConfig(hologramsConfig);
+            fancyHologramManager.loadExistingHolograms();
+            plugin.debug("FancyHologramManager initialized with holograms.yml config and loaded existing holograms");
+        }
+        
         if (usePacketEvents && packetHologramManager != null) {
             packetHologramManager.initialize();
         }
     }
     
+    private void initializeHologramEngines(String preferredEngine) {
+        switch (preferredEngine) {
+            case "fancyholograms":
+                if (initializeFancyHolograms()) {
+                    plugin.getLogger().info("Using FancyHolograms (forced by config)");
+                } else {
+                    plugin.getLogger().warning("FancyHolograms forced but not available! Falling back to auto-detect.");
+                    initializeWithAutoDetect();
+                }
+                break;
+                
+            case "packetevents":
+                if (initializePacketEvents()) {
+                    plugin.getLogger().info("Using PacketEvents (forced by config)");
+                } else {
+                    plugin.getLogger().warning("PacketEvents forced but not available! Falling back to auto-detect.");
+                    initializeWithAutoDetect();
+                }
+                break;
+                
+            case "entity":
+                this.hologramType = HologramType.DISPLAY_ENTITY;
+                plugin.getLogger().info("Using Display Entities (forced by config)");
+                break;
+                
+            case "auto":
+            default:
+                initializeWithAutoDetect();
+                break;
+        }
+    }
+    
+    private void initializeWithAutoDetect() {
+        if (initializeFancyHolograms()) {
+            plugin.getLogger().info("FancyHolograms detected! Using FancyHolograms for zone displays.");
+            return;
+        }
+        
+        if (initializePacketEvents()) {
+            plugin.getLogger().info("PacketEvents detected! Using high-performance packet-based holograms.");
+            return;
+        }
+        
+        this.hologramType = HologramType.DISPLAY_ENTITY;
+        plugin.debug("Using entity-based holograms (Display entities).");
+    }
+    
+    private boolean initializeFancyHolograms() {
+        try {
+            if (!Bukkit.getPluginManager().isPluginEnabled("FancyHolograms")) {
+                plugin.debug("FancyHolograms plugin not detected");
+                return false;
+            }
+            
+            plugin.debug("FancyHolograms plugin detected, attempting to load classes...");
+            
+            if (fancyHologramManager != null && fancyHologramManager.isAvailable()) {
+                plugin.debug("FancyHologramManager already initialized, skipping recreation");
+                this.useFancyHolograms = true;
+                this.hologramType = HologramType.FANCY_HOLOGRAMS;
+                return true;
+            }
+            
+            try {
+                Class<?> managerClass = Class.forName("eu.kotori.justRTP.managers.FancyHologramManager");
+                plugin.debug("FancyHologramManager class loaded successfully");
+                
+                java.lang.reflect.Constructor<?> constructor = managerClass.getConstructor(JustRTP.class);
+                
+                Object managerInstance = constructor.newInstance(plugin);
+                this.fancyHologramManager = (FancyHologramManager) managerInstance;
+                
+                plugin.debug("FancyHologramManager instance created, initializing...");
+                fancyHologramManager.initialize();
+                
+                if (fancyHologramManager.isAvailable()) {
+                    this.useFancyHolograms = true;
+                    this.hologramType = HologramType.FANCY_HOLOGRAMS;
+                    plugin.debug("FancyHolograms initialized successfully!");
+                    return true;
+                } else {
+                    plugin.debug("FancyHologramManager not available");
+                }
+                
+            } catch (ClassNotFoundException e) {
+                plugin.getLogger().warning("FancyHolograms classes not found. Using fallback holograms.");
+                plugin.debug("Missing class: " + e.getMessage());
+            } catch (NoClassDefFoundError e) {
+                plugin.getLogger().warning("FancyHolograms API classes not compatible. Using fallback holograms.");
+                plugin.debug("Missing dependency: " + e.getMessage());
+            } catch (Exception e) {
+                plugin.getLogger().warning("Failed to initialize FancyHolograms: " + e.getMessage());
+                plugin.debug("Error details: " + e.toString());
+            }
+            
+        } catch (Exception e) {
+            plugin.getLogger().warning("Error checking FancyHolograms: " + e.getMessage());
+            plugin.debug("Error details: " + e.toString());
+        }
+        return false;
+    }
+    
+    private boolean initializePacketEvents() {
+        try {
+            if (Bukkit.getPluginManager().isPluginEnabled("packetevents")) {
+                this.packetHologramManager = new PacketHologramManager(plugin);
+                this.usePacketEvents = packetHologramManager.isPacketEventsAvailable();
+                
+                if (usePacketEvents) {
+                    this.hologramType = HologramType.PACKET_EVENTS;
+                    Bukkit.getPluginManager().registerEvents(packetHologramManager, plugin);
+                    return true;
+                }
+            }
+        } catch (Exception e) {
+            plugin.getLogger().warning("Failed to initialize PacketEvents holograms: " + e.getMessage());
+            plugin.debug("Error details: " + e.toString());
+        }
+        return false;
+    }
+    
     public boolean isUsingPacketEvents() {
         return usePacketEvents;
+    }
+    
+    public boolean isUsingFancyHolograms() {
+        return useFancyHolograms;
     }
 
     private void loadDisplayEntities() {
@@ -112,6 +238,14 @@ public class HologramManager {
     }
 
     public boolean isHologramActive(String zoneId) {
+        if (useFancyHolograms && fancyHologramManager != null) {
+            return fancyHologramManager.isHologramActive(zoneId);
+        }
+        
+        if (usePacketEvents && packetHologramManager != null) {
+            return packetHologramManager.isHologramActive(zoneId);
+        }
+        
         return activeHolograms.containsKey(zoneId.toLowerCase());
     }
 
@@ -124,6 +258,11 @@ public class HologramManager {
     }
 
     public void createOrUpdateHologram(String zoneId, Location location, int viewDistance) {
+        if (useFancyHolograms && fancyHologramManager != null) {
+            fancyHologramManager.createOrUpdateHologram(zoneId, location, viewDistance);
+            return;
+        }
+        
         if (usePacketEvents && packetHologramManager != null) {
             packetHologramManager.createOrUpdateHologram(zoneId, location, viewDistance);
             return;
@@ -180,6 +319,11 @@ public class HologramManager {
     }
 
     public void updateHologramTime(String zoneId, int time) {
+        if (useFancyHolograms && fancyHologramManager != null) {
+            fancyHologramManager.updateHologramTime(zoneId, eu.kotori.justRTP.utils.TimeUtils.formatDuration(time));
+            return;
+        }
+        
         if (usePacketEvents && packetHologramManager != null) {
             packetHologramManager.updateHologramTime(zoneId, time);
             return;
@@ -208,7 +352,7 @@ public class HologramManager {
                 if (display != null && display.isValid()) {
                     display.text(MiniMessage.miniMessage().deserialize(line,
                             Placeholder.unparsed("zone_id", zoneId),
-                            Placeholder.unparsed("time", timeString)
+                            Placeholder.unparsed("time", eu.kotori.justRTP.utils.TimeUtils.formatDuration(Integer.parseInt(timeString)))
                     ));
                 }
                 displayIndex++;
@@ -218,6 +362,11 @@ public class HologramManager {
     }
 
     public void updateHologramProgress(String zoneId) {
+        if (useFancyHolograms && fancyHologramManager != null) {
+            fancyHologramManager.updateHologramProgress(zoneId);
+            return;
+        }
+        
         if (usePacketEvents && packetHologramManager != null) {
             packetHologramManager.updateHologramProgress(zoneId);
             return;
@@ -278,40 +427,85 @@ public class HologramManager {
     }
 
     public void removeHologram(String zoneId) {
+        plugin.debug("HologramManager: Removing hologram for zone: " + zoneId);
+        
+        if (useFancyHolograms && fancyHologramManager != null) {
+            fancyHologramManager.removeHologram(zoneId);
+            return;
+        }
+        
         if (usePacketEvents && packetHologramManager != null) {
             packetHologramManager.removeHologram(zoneId);
             return;
         }
         
-        HologramInstance instance = activeHolograms.remove(zoneId.toLowerCase());
+        String normalizedZoneId = zoneId.toLowerCase();
+        boolean removed = false;
+        
+        HologramInstance instance = activeHolograms.remove(normalizedZoneId);
         if (instance != null) {
-            instance.displays.forEach(display -> {
+            for (TextDisplay display : instance.displays) {
                 if (display != null && !display.isDead()) {
                     display.remove();
+                    removed = true;
                 }
-            });
+            }
+            plugin.debug("✓ Removed " + instance.displays.size() + " active display entities for zone: " + zoneId);
         }
 
-        List<String> uuidStrings = displayEntitiesConfig.getStringList("zones." + zoneId.toLowerCase());
+        List<String> uuidStrings = displayEntitiesConfig.getStringList("zones." + normalizedZoneId);
         if (!uuidStrings.isEmpty()) {
+            int removedCount = 0;
             for (String uuidString : uuidStrings) {
                 try {
                     UUID uuid = UUID.fromString(uuidString);
                     Entity entity = Bukkit.getEntity(uuid);
                     if (entity instanceof TextDisplay && entity.isValid()) {
                         entity.remove();
+                        removedCount++;
+                        removed = true;
                     }
                 } catch (IllegalArgumentException e) {
+                    plugin.debug("Invalid UUID in display entities config: " + uuidString);
                 }
             }
+            if (removedCount > 0) {
+                plugin.debug("✓ Removed " + removedCount + " persistent display entities for zone: " + zoneId);
+            }
         }
-        displayEntitiesConfig.set("zones." + zoneId.toLowerCase(), null);
+        
+        displayEntitiesConfig.set("zones." + normalizedZoneId, null);
         saveDisplayEntities();
+        
+        if (removed) {
+            plugin.getLogger().info("Successfully removed display entity hologram for zone: " + zoneId);
+        } else {
+            plugin.debug("No display entities found to remove for zone: " + zoneId);
+        }
+    }
+    
+    public void reloadConfiguration() {
+        plugin.debug("Reloading hologram configuration...");
+        
+        File configFile = new File(plugin.getDataFolder(), "holograms.yml");
+        hologramsConfig = YamlConfiguration.loadConfiguration(configFile);
+        
+        if (useFancyHolograms && fancyHologramManager != null) {
+            fancyHologramManager.setHologramsConfig(hologramsConfig);
+            fancyHologramManager.reloadTemplates();
+            plugin.debug("FancyHologramManager templates reloaded");
+        }
+        
+        plugin.getLogger().info("Hologram configuration reloaded successfully");
     }
 
     public void cleanupAllHolograms() {
         plugin.debug("Cleaning up all JustRTP holograms from all worlds...");
 
+        if (useFancyHolograms && fancyHologramManager != null) {
+            fancyHologramManager.removeAllHolograms();
+        }
+        
         if (usePacketEvents && packetHologramManager != null) {
             packetHologramManager.cleanupAllHolograms();
         }

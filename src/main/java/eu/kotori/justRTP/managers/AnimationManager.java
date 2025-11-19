@@ -32,6 +32,11 @@ public class AnimationManager {
         loadAnimations();
     }
 
+    public void reload() {
+        loadedAnimations.clear();
+        loadAnimations();
+    }
+
     private void loadAnimations() {
         File animFile = new File(plugin.getDataFolder(), "animations.yml");
         if (!animFile.exists()) {

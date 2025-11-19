@@ -164,9 +164,9 @@ public class PacketHologramManager implements Listener {
                         }
                         
                         int entityId = entityIdCounter.getAndIncrement();
-                        Component text = MiniMessage.miniMessage().deserialize(line,
-                                Placeholder.unparsed("zone_id", zoneId),
-                                Placeholder.unparsed("time", ""));
+            Component text = MiniMessage.miniMessage().deserialize(line,
+                Placeholder.unparsed("zone_id", zoneId),
+                Placeholder.unparsed("time", ""));
                         
                         HologramLine hologramLine = new HologramLine(entityId, textLocation.clone(), text);
                         lines.add(hologramLine);
@@ -177,9 +177,13 @@ public class PacketHologramManager implements Listener {
                     PacketHologram hologram = new PacketHologram(zoneId, location, lines, viewDistance);
                     activeHolograms.put(zoneId.toLowerCase(), hologram);
                     
-                    plugin.debug("Created hologram for zone " + zoneId + " with " + lines.size() + " lines");
+                    plugin.debug("Created packet hologram for zone " + zoneId + " with " + lines.size() + " lines");
                     
                     sendHologramToNearbyPlayers(hologram);
+                    
+                    plugin.getFoliaScheduler().runLater(() -> {
+                        sendHologramToNearbyPlayers(hologram);
+                    }, 1L);
                     
                     displayEntitiesConfig.set("zones." + zoneId.toLowerCase(), entityIds);
                     saveDisplayEntities();
@@ -207,7 +211,7 @@ public class PacketHologramManager implements Listener {
             return;
         }
 
-        String timeString = String.valueOf(time);
+    String timeString = eu.kotori.justRTP.utils.TimeUtils.formatDuration(time);
         
         List<String> configLines = hologramsConfig.getStringList("hologram-settings.lines");
         
@@ -218,9 +222,9 @@ public class PacketHologramManager implements Listener {
                 HologramLine hologramLine = hologram.lines.get(lineIndex);
                 
                 synchronized (hologramLine) {
-                    hologramLine.text = MiniMessage.miniMessage().deserialize(line,
-                            Placeholder.unparsed("zone_id", zoneId),
-                            Placeholder.unparsed("time", timeString));
+            hologramLine.text = MiniMessage.miniMessage().deserialize(line,
+                Placeholder.unparsed("zone_id", zoneId),
+                Placeholder.unparsed("time", timeString));
                 }
                 
                 sendTextUpdateToViewers(hologram, hologramLine);
@@ -254,9 +258,9 @@ public class PacketHologramManager implements Listener {
                 HologramLine hologramLine = hologram.lines.get(lineIndex);
                 
                 synchronized (hologramLine) {
-                    hologramLine.text = MiniMessage.miniMessage().deserialize(line,
-                            Placeholder.unparsed("zone_id", zoneId),
-                            Placeholder.unparsed("time", progressText));
+            hologramLine.text = MiniMessage.miniMessage().deserialize(line,
+                Placeholder.unparsed("zone_id", zoneId),
+                Placeholder.unparsed("time", progressText));
                 }
                 
                 sendTextUpdateToViewers(hologram, hologramLine);
@@ -480,9 +484,15 @@ public class PacketHologramManager implements Listener {
                     Player player = Bukkit.getPlayer(playerId);
                     if (player != null && player.isOnline()) {
                         try {
-                            player.spawnParticle(org.bukkit.Particle.ENCHANT, particleLoc, 1, 0, 0, 0, 0);
+                            org.bukkit.Particle particle = getParticle("ENCHANT");
+                            if (particle != null) {
+                                player.spawnParticle(particle, particleLoc, 1, 0, 0, 0, 0);
+                            }
                         } catch (Exception ex) {
-                            hologram.location.getWorld().spawnParticle(org.bukkit.Particle.ENCHANT, particleLoc, 1, 0, 0, 0, 0);
+                            org.bukkit.Particle particle = getParticle("ENCHANT");
+                            if (particle != null) {
+                                hologram.location.getWorld().spawnParticle(particle, particleLoc, 1, 0, 0, 0, 0);
+                            }
                         }
                     }
                 }
@@ -494,6 +504,9 @@ public class PacketHologramManager implements Listener {
 
     public void removeHologram(String zoneId) {
         String normalizedZoneId = zoneId.toLowerCase();
+        
+        plugin.debug("Removing packet hologram for zone: " + zoneId);
+        
         PacketHologram hologram = activeHolograms.remove(normalizedZoneId);
         
         if (hologram != null) {
@@ -519,10 +532,17 @@ public class PacketHologramManager implements Listener {
                 
                 viewers.clear();
             }
+            
+            plugin.debug("✓ Removed packet hologram for zone: " + zoneId + " (hidden from " + 
+                        (viewers != null ? viewers.size() : 0) + " players)");
+        } else {
+            plugin.debug("No active packet hologram found for zone: " + zoneId);
         }
         
         displayEntitiesConfig.set("zones." + normalizedZoneId, null);
         saveDisplayEntities();
+        
+        plugin.getLogger().info("Packet hologram removal completed for zone: " + zoneId);
     }
 
     public void cleanupAllHolograms() {
@@ -651,5 +671,32 @@ public class PacketHologramManager implements Listener {
                 }
             }
         }
+    }
+    
+    private org.bukkit.Particle getParticle(String name) {
+        try {
+            return org.bukkit.Registry.PARTICLE_TYPE.get(org.bukkit.NamespacedKey.minecraft(name.toLowerCase()));
+        } catch (Throwable ignored) {
+        }
+        try {
+            Class<org.bukkit.Particle> particleClass = org.bukkit.Particle.class;
+            java.lang.reflect.Method valuesMethod = particleClass.getMethod("values");
+            Object result = valuesMethod.invoke(null);
+            if (result instanceof org.bukkit.Particle[]) {
+                org.bukkit.Particle[] allParticles = (org.bukkit.Particle[]) result;
+                java.lang.reflect.Method nameMethod = particleClass.getMethod("name");
+                for (int i = 0; i < allParticles.length; i++) {
+                    org.bukkit.Particle p = allParticles[i];
+                    if (p != null) {
+                        String enumName = (String) nameMethod.invoke(p);
+                        if (enumName != null && (enumName.equalsIgnoreCase(name) || enumName.equalsIgnoreCase("ENCHANTING_TABLE") || enumName.equalsIgnoreCase("ENCHANTMENT_TABLE"))) {
+                            return p;
+                        }
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return null;
     }
 }

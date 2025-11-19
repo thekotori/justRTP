@@ -3,6 +3,7 @@ package eu.kotori.justRTP.managers;
 import eu.kotori.justRTP.JustRTP;
 import eu.kotori.justRTP.utils.task.CancellableTask;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
+import eu.kotori.justRTP.utils.TimeUtils;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
 
@@ -27,7 +28,7 @@ public class DelayManager {
         initialLocations.put(player.getUniqueId(), player.getLocation());
         plugin.getEffectsManager().applyPreTeleportEffects(player, seconds);
         plugin.getAnimationManager().playDelayAnimation(player, seconds);
-        plugin.getLocaleManager().sendMessage(player, "teleport.delay", Placeholder.unparsed("time", String.valueOf(seconds)));
+    plugin.getLocaleManager().sendMessage(player, "teleport.delay", Placeholder.unparsed("time", TimeUtils.formatDuration(seconds)));
 
         CancellableTask task = plugin.getFoliaScheduler().runAtEntityLater(player, () -> {
             delayedTasks.remove(player.getUniqueId());

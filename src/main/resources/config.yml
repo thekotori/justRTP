@@ -2,7 +2,7 @@
 # JustRTP Configuration
 # ----------------------------------------------------------------
 # CONFIG VERSION - DO NOT CHANGE THIS
-config-version: 22
+config-version: 24
 # ----------------------------------------------------------------
 
 settings:
@@ -30,11 +30,19 @@ settings:
 
   # Enable debug mode to print detailed information to the console.
   # This is useful for troubleshooting but can be very spammy.
-  debug: true
+  debug: false
 
   # Should the /rtp credits command require the "justrtp.command.credits" permission?
   # If false, anyone can use the command.
   credits_command_requires_permission: true
+  
+  # Optional: Force a server-wide default world for /rtp when no world is specified.
+  # If empty (""), /rtp without a world will default to the player's current world (existing behaviour).
+  # If set to a valid world name (e.g. "world"), /rtp will use that world as the default target.
+  # Players with the permission "justrtp.bypass.default_world" will still default to their current world.
+  # Example:
+  #   settings.default_world: "world"
+  default_world: ""
 
 # --- bStats Metrics ---
 # bStats collects some anonymous data for plugin authors like server version, number of players, etc.
@@ -94,12 +102,19 @@ rtp_settings:
 #
 # WARNING: For cross-server nether RTP, configure world_types on TARGET server!
 # Example: /rtp lobby2:world_nether requires lobby2 to have world_nether: "NETHER"
+#
+# IMPORTANT: Add ALL your custom worlds here for best performance!
 world_types:
   world: "NORMAL"
   world_nether: "NETHER"      # Standard nether (Y < 127 enforced)
   world_the_end: "THE_END"    # Standard end world
+  # Example custom worlds (uncomment and adjust as needed):
+  # plains: "NORMAL"          # Custom plains biome world
+  # badlands: "NORMAL"        # Custom badlands biome world
+  # snow: "NORMAL"            # Custom snow biome world
+  # mushroom: "NORMAL"        # Custom mushroom biome world
   # custom_nether: "NETHER"   # Custom nether dimension
-  # mining_world: "NORMAL"    # Custom overworld
+  # mining_world: "NORMAL"    # Custom mining/resource world
 
 # --- Location Caching System ---
 # This system dramatically improves performance by finding safe locations in advance.
@@ -107,27 +122,30 @@ world_types:
 location_cache:
   # Enable the cache for instant teleports.
   enabled: true
-
-  # How many safe locations should the plugin find and keep ready for each world?
-  cache_size: 20
-
-  # How often (in seconds) should the plugin check if the cache needs refilling?
-  refill_interval_seconds: 5
-
   # --- Whitelist of Worlds to Cache ---
   # Only worlds listed here will have a location cache.
   # The names MUST EXACTLY match your world folder names.
   #
-  # For each world, you can specify if chunk generation is allowed.
-  #   generate_chunks: true  -> Recommended for large, explorable worlds (world, resources).
+  # ⚠️ CRITICAL: Every world in rtp_settings.worlds.list MUST be here!
+  #   Missing worlds will get generateChunks=false → chunk loading fails → UNKNOWN errors!
+  #
+  # For each world, you can specify if chunk generation is allowed:
+  #   generate_chunks: true  -> Recommended for large, explorable worlds (world, resources, custom biome worlds).
   #   generate_chunks: false -> CRITICAL for small, pre-generated worlds (arenas, minigames, spawn).
   worlds:
     world:
       generate_chunks: true
     world_nether:
       generate_chunks: true
-    # pvp_arena:
-    #   generate_chunks: false
+    # Example custom worlds (uncomment and add your worlds here):
+    # plains:
+    #   generate_chunks: true
+    # badlands:
+    #   generate_chunks: true
+    # snow:
+    #   generate_chunks: true    # ← CRITICAL: Must be true for custom biome worlds!
+    # mushroom:
+    #   generate_chunks: true
 
 # --- Animation Settings ---
 # Choose which animations from animations.yml to play.
@@ -149,10 +167,18 @@ delay_settings:
 
 # --- RTP Zone Teleport Settings ---
 # Configure how players are spread out when teleported from an RTP Zone.
+# Players will be distributed in a circle/pattern around a randomly selected central point.
 zone_teleport_settings:
-  # The minimum distance (in blocks) a player can be teleported from the group's center point.
+  # The minimum distance (in blocks) between any two players after teleportation.
+  # Lower values = players spawn closer together (good for team play).
+  # Higher values = players spawn further apart (good for PvP arenas).
+  # Recommended: 5-10 blocks for team zones, 15-30 blocks for PvP zones.
   min_spread_distance: 5
-  # The maximum distance (in blocks) a player can be teleported from the group's center point.
+  
+  # The maximum distance (in blocks) from the central point where players can spawn.
+  # This defines the overall "spawn area" size for the group.
+  # All players will spawn within this radius from the randomly chosen center.
+  # Recommended: 15-50 blocks depending on your arena/zone size.
   max_spread_distance: 15
 
 # --- First Join Teleport ---
@@ -171,6 +197,35 @@ respawn_rtp:
   worlds:
     - "world"
     - "world_nether"
+
+# --- Spawn World Redirect ---
+# Redirect /rtp commands from spawn world to another world (e.g., overworld).
+# Useful when you want players to use /rtp from spawn but teleport to a different world.
+spawn_world_redirect:
+  # Enable spawn world redirect feature
+  enabled: false
+  # The name of your spawn world (where players type /rtp)
+  spawn_world: "spawn"
+  # The target world to teleport to (e.g., your main overworld)
+  target_world: "world"
+  # Optional: Send a message to the player when they are redirected
+  notify_player: true
+
+# --- Jump RTP Feature ---
+# Allow players to teleport by jumping (double-jump or hold jump).
+jump_rtp:
+  # Enable the Jump RTP feature
+  enabled: false
+  # Cooldown between Jump RTP teleports (in seconds)
+  cooldown: 60
+  # List of worlds where Jump RTP is enabled
+  enabled_worlds:
+    - "world"
+    - "world_nether"
+  # Number of jumps required to trigger RTP (1 = single jump, 2 = double jump)
+  jumps_required: 2
+  # Time window in milliseconds for detecting multiple jumps (for double-jump detection)
+  jump_time_window: 500
 
 # --- Economy Settings (Requires Vault) ---
 economy:
@@ -337,8 +392,12 @@ effects:
   # This action bar is shown with a timer when a player is waiting for a cross-server RTP.
   queue_action_bar:
     enabled: true
-    # Placeholders: <server> (target server name), <time> (seconds in queue)
-    text: "<gray>Searching on <gradient:#20B2AA:#7FFFD4><server></gradient>... <dark_gray>| <gray>Time: <white><time>s</white>"
+    # Placeholders: 
+    #   <server> - target server name
+    #   <time> or <elapsed> - seconds elapsed (counts up: 0, 1, 2...)
+    #   <remaining> or <countdown> - seconds remaining (counts down: 90, 89, 88...)
+    #   <total> - total timeout seconds
+    text: "<gray>Searching on <gradient:#20B2AA:#7FFFD4><server></gradient>... <dark_gray>| <gray>Time: <white><countdown>s</white>"
 
   # This action bar is shown when a player's local RTP request is queued.
   in_queue_action_bar:
@@ -430,6 +489,9 @@ blacklist_blocks:
 # CRITICAL: Plugin enforces ABSOLUTE MAX of 10,000,000 blocks to prevent server crashes!
 # Check your world border with /worldborder get
 # WARNING: Extremely large radius values (>1 million) can cause chunk loading delays!
+#
+# ⚠️ IMPORTANT: Add ALL worlds from rtp_settings.worlds.list here!
+#   Without custom_worlds config, plugin uses ENTIRE world border (can cause failures!)
 custom_worlds:
   world:
     # Example: If your overworld border is 10,000 x 10,000, the max radius is 5000.
@@ -438,6 +500,28 @@ custom_worlds:
     center_x: 0
     center_z: 0
     cost: 100.0
+    
+    # --- Radius-Based Pricing (Optional) ---
+    # Charge different prices based on the maximum radius chosen by the player.
+    # This cost is ADDED to the base cost above (or permission group cost).
+    # Example: If cost is 100 and player chooses 15000 radius, total cost = 100 + 250 = 350
+    # Players need the permission "justrtp.command.rtp.radius" to choose custom radii.
+    radius_pricing:
+      enabled: false  # Set to true to enable radius-based pricing
+      tiers:
+        tier1:
+          max_radius: 5000   # If player chooses radius <= 5000
+          cost: 0.0          # Add 0 to base cost (no extra charge)
+        tier2:
+          max_radius: 15000  # If player chooses radius <= 15000
+          cost: 250.0        # Add 250 to base cost
+        tier3:
+          max_radius: 25000  # If player chooses radius <= 25000
+          cost: 500.0        # Add 500 to base cost
+        # The plugin will automatically choose the smallest tier that fits the player's radius.
+        # If player chooses 12000 radius, they'll be charged tier2 (250).
+        # You can add more tiers as needed.
+
   world_nether:
     # The Nether coordinates are 1/8th of the overworld. A 5000 overworld radius is ~625 in the Nether.
     # If your nether border is 1,250 x 1,250, the max radius is 625.
@@ -451,9 +535,75 @@ custom_worlds:
     min_radius: 500
     center_x: 0
     center_z: 0
+  # Example custom biome worlds (uncomment and adjust as needed):
+  # plains:
+  #   max_radius: 5000
+  #   min_radius: 100
+  #   center_x: 0
+  #   center_z: 0
+  #   cost: 100.0
+  # badlands:
+  #   max_radius: 5000
+  #   min_radius: 100
+  #   center_x: 0
+  #   center_z: 0
+  #   cost: 100.0
+  # snow:                    # ← Add your custom worlds here!
+  #   max_radius: 5000       # Max distance from center
+  #   min_radius: 100        # Min distance from center
+  #   center_x: 0            # RTP center X coordinate
+  #   center_z: 0            # RTP center Z coordinate
+  #   cost: 0                # Economy cost (requires Vault)
+  # mushroom:
+  #   max_radius: 5000
+  #   min_radius: 100
+  #   center_x: 0
+  #   center_z: 0
+  #   cost: 100.0
 
 # Define special settings for players with specific permissions (e.g., for VIP ranks).
 # Lower priority numbers = higher priority (MVP overrides VIP settings)
+# 
+# PER-WORLD COOLDOWNS ARE SUPPORTED!
+# You can configure different cooldowns, delays, and costs for each world within a permission group.
+# This allows, for example, VIPs to have shorter cooldowns in the overworld but even shorter in the nether.
+#
+# Example configuration with per-world settings:
+# permission_groups:
+#   enabled: true
+#   groups:
+#     vip:
+#       priority: 20
+#       worlds:
+#         world:
+#           cooldown: 60      # 60 seconds cooldown in overworld
+#           delay: 5
+#           cost: 0.0
+#         world_nether:
+#           cooldown: 20      # Only 20 seconds in nether!
+#           delay: 3
+#           cost: 0.0
+#         world_the_end:
+#           cooldown: 10      # Only 10 seconds in the end!
+#           delay: 2
+#           cost: 0.0
+#     mvp:
+#       priority: 10          # Lower = higher priority
+#       worlds:
+#         world:
+#           cooldown: 0       # No cooldown for MVPs
+#           delay: 0          # Instant teleport
+#           cost: 0.0
+#           max_radius: 7500  # Can also set custom radius per world
+#           min_radius: 500
+#
+# PlaceholderAPI Support:
+# Use %justrtp_cooldown% for current world or %justrtp_cooldown_worldname% for specific world
+# Examples:
+#   %justrtp_cooldown%              - Cooldown for player's current world
+#   %justrtp_cooldown_world_nether% - Cooldown for world_nether
+#   %justrtp_cost_world%            - Cost for world named "world"
+#   %justrtp_delay_world_the_end%   - Delay for world_the_end
 permission_groups:
   enabled: true
   groups:

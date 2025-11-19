@@ -11,7 +11,14 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class TeleportQueueManager {
-    private record TeleportRequest(Player player, World world, Optional<Integer> minRadius, Optional<Integer> maxRadius, CompletableFuture<Boolean> future, long timestamp) {}
+    private record TeleportRequest(Player player, World world, Optional<Integer> minRadius, Optional<Integer> maxRadius, CompletableFuture<Boolean> future, long timestamp, int centerX, int centerZ, double cost) {
+        public TeleportRequest(Player player, World world, Optional<Integer> minRadius, Optional<Integer> maxRadius, CompletableFuture<Boolean> future, long timestamp, double cost) {
+            this(player, world, minRadius, maxRadius, future, timestamp, 0, 0, cost);
+        }
+        public TeleportRequest(Player player, World world, Optional<Integer> minRadius, Optional<Integer> maxRadius, CompletableFuture<Boolean> future, long timestamp, int centerX, int centerZ) {
+            this(player, world, minRadius, maxRadius, future, timestamp, centerX, centerZ, 0.0);
+        }
+    }
     private final JustRTP plugin;
     private final ConcurrentLinkedQueue<TeleportRequest> queue = new ConcurrentLinkedQueue<>();
     private final ConcurrentHashMap<UUID, AtomicBoolean> processingPlayers = new ConcurrentHashMap<>();
@@ -72,7 +79,7 @@ public class TeleportQueueManager {
                         continue;
                     }
                     
-                    plugin.getRtpService().findSafeLocation(player, request.world(), 0, request.minRadius(), request.maxRadius())
+                    plugin.getRtpService().findSafeLocation(player, request.world(), 0, request.minRadius(), request.maxRadius(), request.centerX(), request.centerZ())
                             .whenComplete((locationOpt, throwable) -> {
                                 try {
                                     if (throwable != null) {
@@ -81,7 +88,12 @@ public class TeleportQueueManager {
                                         request.future().complete(false);
                                     } else if (locationOpt.isPresent()) {
                                         if (player.isOnline()) {
-                                            plugin.getRtpService().teleportPlayer(player, locationOpt.get());
+                                            plugin.getRtpService().teleportPlayer(player, locationOpt.get(), 
+                                                request.minRadius().orElse(null), 
+                                                request.maxRadius().orElse(null), 
+                                                request.cost(), 
+                                                false, 
+                                                null);
                                             request.future().complete(true);
                                         } else {
                                             plugin.debug("Player " + player.getName() + " went offline before teleport");
@@ -103,6 +115,18 @@ public class TeleportQueueManager {
     }
 
     public CompletableFuture<Boolean> requestTeleport(Player player, World world, Optional<Integer> minRadius, Optional<Integer> maxRadius) {
+        return requestTeleport(player, world, minRadius, maxRadius, 0.0);
+    }
+    
+    public CompletableFuture<Boolean> requestTeleport(Player player, World world, Optional<Integer> minRadius, Optional<Integer> maxRadius, double cost) {
+        return requestTeleport(player, world, minRadius, maxRadius, 0, 0, cost);
+    }
+
+    public CompletableFuture<Boolean> requestTeleport(Player player, World world, Optional<Integer> minRadius, Optional<Integer> maxRadius, int centerX, int centerZ) {
+        return requestTeleport(player, world, minRadius, maxRadius, centerX, centerZ, 0.0);
+    }
+    
+    public CompletableFuture<Boolean> requestTeleport(Player player, World world, Optional<Integer> minRadius, Optional<Integer> maxRadius, int centerX, int centerZ, double cost) {
         CompletableFuture<Boolean> future = new CompletableFuture<>();
         UUID playerUUID = player.getUniqueId();
         
@@ -127,9 +151,9 @@ public class TeleportQueueManager {
             }
             
             long timestamp = System.currentTimeMillis();
-            queue.add(new TeleportRequest(player, world, minRadius, maxRadius, future, timestamp));
+            queue.add(new TeleportRequest(player, world, minRadius, maxRadius, future, timestamp, centerX, centerZ, cost));
             plugin.getEffectsManager().applyEffects(player, plugin.getConfig().getConfigurationSection("effects.in_queue_action_bar"));
-            plugin.debug("Added teleport request to queue for " + player.getName() + " (queue size: " + queue.size() + ")");
+            plugin.debug("Added teleport request to queue for " + player.getName() + " (queue size: " + queue.size() + ", center: " + centerX + ", " + centerZ + ")");
         } else {
             AtomicBoolean directProcessing = processingPlayers.computeIfAbsent(playerUUID, k -> new AtomicBoolean(false));
             if (!directProcessing.compareAndSet(false, true)) {
@@ -139,7 +163,7 @@ public class TeleportQueueManager {
                 return future;
             }
             
-            plugin.getRtpService().findSafeLocation(player, world, 0, minRadius, maxRadius)
+            plugin.getRtpService().findSafeLocation(player, world, 0, minRadius, maxRadius, centerX, centerZ)
                     .whenComplete((locationOpt, throwable) -> {
                         try {
                             if (throwable != null) {
@@ -148,7 +172,12 @@ public class TeleportQueueManager {
                                 future.complete(false);
                             } else if (locationOpt.isPresent()) {
                                 if (player.isOnline()) {
-                                    plugin.getRtpService().teleportPlayer(player, locationOpt.get());
+                                    plugin.getRtpService().teleportPlayer(player, locationOpt.get(), 
+                                        minRadius.orElse(null), 
+                                        maxRadius.orElse(null), 
+                                        cost, 
+                                        false, 
+                                        null);
                                     future.complete(true);
                                 } else {
                                     future.complete(false);

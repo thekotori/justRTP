@@ -2,7 +2,7 @@
 # JustRTP Zones Configuration
 # ----------------------------------------------------------------
 # CONFIG VERSION - DO NOT CHANGE THIS
-config-version: 10
+config-version: 11
 # ----------------------------------------------------------------
 #
 # This file stores the configurations for your RTP zones.
@@ -22,8 +22,13 @@ config-version: 10
 #   min-radius & max-radius: The min/max distance for the random teleport from the world's center.
 #
 #   min-spread-distance & max-spread-distance (Optional):
-#     Overrides the default player spread in config.yml for this specific zone.
-#     This controls how far apart players land from each other.
+#     Controls how players are distributed relative to each other when teleporting as a group.
+#     - min-spread-distance: Minimum blocks between any two players (prevents spawning on top of each other)
+#     - max-spread-distance: Maximum radius from the central spawn point (defines overall group spread area)
+#     If omitted, uses the defaults from config.yml (5 and 15 blocks).
+#     Example values:
+#       - Team zones: min=5, max=15 (players spawn close together)
+#       - PvP arenas: min=20, max=50 (players spawn far apart for fair fights)
 #
 #   effects (Optional): Customize sounds, titles, and action bars for this specific zone.
 #     If this section is omitted, the global effects from config.yml will be used.

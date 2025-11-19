@@ -109,6 +109,37 @@ public class ConfigManager {
         return getDouble(player, world, "cost", 100.0);
     }
 
+    public double getRadiusBasedCost(World world, int maxRadius) {
+        String worldPath = "custom_worlds." + world.getName() + ".radius_pricing";
+        
+        if (!plugin.getConfig().getBoolean(worldPath + ".enabled", false)) {
+            return 0.0;
+        }
+        
+        ConfigurationSection tiersSection = plugin.getConfig().getConfigurationSection(worldPath + ".tiers");
+        if (tiersSection == null) {
+            return 0.0;
+        }
+        
+        double tierCost = 0.0;
+        int matchedMaxRadius = Integer.MAX_VALUE;
+        
+        for (String tierKey : tiersSection.getKeys(false)) {
+            ConfigurationSection tier = tiersSection.getConfigurationSection(tierKey);
+            if (tier == null) continue;
+            
+            int tierMaxRadius = tier.getInt("max_radius", 0);
+            double cost = tier.getDouble("cost", 0.0);
+            
+            if (maxRadius <= tierMaxRadius && tierMaxRadius < matchedMaxRadius) {
+                matchedMaxRadius = tierMaxRadius;
+                tierCost = cost;
+            }
+        }
+        
+        return tierCost;
+    }
+
     public boolean getProxyEnabled() {
         return plugin.getConfig().getBoolean("proxy.enabled", false);
     }
@@ -176,4 +207,41 @@ public class ConfigManager {
     public boolean isRedisEnabled() {
         return plugin.getConfig().getBoolean("redis.enabled", false);
     }
+
+    public boolean isSpawnRedirectEnabled() {
+        return plugin.getConfig().getBoolean("spawn_world_redirect.enabled", false);
+    }
+
+    public String getSpawnWorldName() {
+        return plugin.getConfig().getString("spawn_world_redirect.spawn_world", "spawn");
+    }
+
+    public String getSpawnRedirectTargetWorld() {
+        return plugin.getConfig().getString("spawn_world_redirect.target_world", "world");
+    }
+
+    public boolean shouldNotifySpawnRedirect() {
+        return plugin.getConfig().getBoolean("spawn_world_redirect.notify_player", true);
+    }
+
+    public boolean isJumpRtpEnabled() {
+        return plugin.getConfig().getBoolean("jump_rtp.enabled", false);
+    }
+
+    public int getJumpRtpCooldown() {
+        return plugin.getConfig().getInt("jump_rtp.cooldown", 60);
+    }
+
+    public List<String> getJumpRtpEnabledWorlds() {
+        return plugin.getConfig().getStringList("jump_rtp.enabled_worlds");
+    }
+
+    public int getJumpsRequired() {
+        return plugin.getConfig().getInt("jump_rtp.jumps_required", 2);
+    }
+
+    public long getJumpTimeWindow() {
+        return plugin.getConfig().getLong("jump_rtp.jump_time_window", 500);
+    }
 }
+

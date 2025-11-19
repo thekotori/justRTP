@@ -37,7 +37,11 @@ public class LocaleManager {
     public void sendMessage(CommandSender sender, String path, TagResolver... resolvers) {
         String message = messagesConfig.getString(path);
         
-        if (message == null || message.isEmpty()) {
+        if (message != null && message.isEmpty()) {
+            return;
+        }
+        
+        if (message == null) {
             if (!warnedMissingKeys.contains(path)) {
                 warnedMissingKeys.add(path);
                 plugin.getLogger().warning("Missing message key: '" + path + "' - Please check messages.yml");

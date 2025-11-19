@@ -317,12 +317,14 @@ public class CrossServerManager {
         }
 
         String serverAlias = plugin.getConfigManager().getProxyServerAlias(serverName);
-        AtomicInteger seconds = new AtomicInteger(0);
         int timeoutSeconds = plugin.getConfig().getInt("proxy.timeout_seconds", 90);
+        AtomicInteger remainingSeconds = new AtomicInteger(timeoutSeconds);
         
         CancellableTask task = plugin.getFoliaScheduler().runTimer(() -> {
-            if (!player.isOnline() || seconds.incrementAndGet() > timeoutSeconds) {
-                if (player.isOnline()) {
+            int remaining = remainingSeconds.get();
+            
+            if (!player.isOnline() || remaining <= 0) {
+                if (player.isOnline() && remaining <= 0) {
                     plugin.getDatabaseManager().getTeleportRequest(player.getUniqueId()).thenAccept(requestOpt -> {
                         if (requestOpt.isPresent() && ("PENDING".equals(requestOpt.get().status()) || "PROCESSING".equals(requestOpt.get().status()))) {
                             plugin.debug("Cross-server location timeout after " + timeoutSeconds + "s for " + player.getName());
@@ -336,7 +338,10 @@ public class CrossServerManager {
                 cancelQueueTimer(player.getUniqueId());
                 return;
             }
-            plugin.getEffectsManager().sendQueueActionBar(player, serverAlias, seconds.get());
+            
+            int elapsed = timeoutSeconds - remaining;
+            plugin.getEffectsManager().sendQueueActionBar(player, serverAlias, elapsed, remaining, timeoutSeconds);
+            remainingSeconds.decrementAndGet();
         }, 0L, 20L);
         activeTimers.put(player.getUniqueId(), task);
     }

@@ -27,6 +27,7 @@ public class DatabaseManager {
     private final JustRTP plugin;
     private final ThreadSafetyGuard threadGuard;
     private HikariDataSource dataSource;
+    private boolean supportsSkipLocked = false;
 
     public DatabaseManager(JustRTP plugin, FoliaScheduler scheduler) {
         this.plugin = plugin;
@@ -114,14 +115,48 @@ public class DatabaseManager {
             hikariConfig.addDataSourceProperty("maintainTimeStats", "false");
 
             plugin.debug("Attempting MySQL connection to " + host + ":" + port + "/" + database + " as user '" + username + "'");
+            plugin.getLogger().info("Initializing HikariCP connection pool...");
             
             dataSource = new HikariDataSource(hikariConfig);
+            
+            plugin.getLogger().info("HikariCP pool started successfully");
             
             try (Connection testConn = dataSource.getConnection()) {
                 if (!testConn.isValid(5)) {
                     throw new SQLException("Database connection test failed");
                 }
                 plugin.debug("Database connection validated successfully.");
+                
+                DatabaseMetaData metaData = testConn.getMetaData();
+                String dbProductName = metaData.getDatabaseProductName();
+                String dbVersion = metaData.getDatabaseProductVersion();
+                int majorVersion = metaData.getDatabaseMajorVersion();
+                int minorVersion = metaData.getDatabaseMinorVersion();
+                
+                plugin.getLogger().info("Connected to " + dbProductName + " " + dbVersion);
+                
+                if (dbProductName.toLowerCase().contains("mysql")) {
+                    if (majorVersion >= 8) {
+                        supportsSkipLocked = true;
+                        plugin.debug("MySQL 8.0+ detected - SKIP LOCKED enabled");
+                    } else {
+                        supportsSkipLocked = false;
+                        plugin.getLogger().warning("MySQL " + majorVersion + "." + minorVersion + " detected - SKIP LOCKED not supported (requires MySQL 8.0+)");
+                        plugin.getLogger().warning("Cross-server teleports will use fallback locking mechanism");
+                    }
+                } else if (dbProductName.toLowerCase().contains("mariadb")) {
+                    if (majorVersion > 10 || (majorVersion == 10 && minorVersion >= 6)) {
+                        supportsSkipLocked = true;
+                        plugin.debug("MariaDB 10.6+ detected - SKIP LOCKED enabled");
+                    } else {
+                        supportsSkipLocked = false;
+                        plugin.getLogger().warning("MariaDB " + majorVersion + "." + minorVersion + " detected - SKIP LOCKED not supported (requires MariaDB 10.6+)");
+                        plugin.getLogger().warning("Cross-server teleports will use fallback locking mechanism");
+                    }
+                } else {
+                    supportsSkipLocked = false;
+                    plugin.getLogger().warning("Unknown database type: " + dbProductName + " - SKIP LOCKED disabled");
+                }
             }
             
             plugin.getLogger().info("Successfully connected to MySQL database at " + host + ":" + port + "/" + database);
@@ -771,7 +806,7 @@ public class DatabaseManager {
             String selectSql = "SELECT * FROM justrtp_teleports " +
                               "WHERE target_server = ? AND status = ? " +
                               "ORDER BY created_at ASC LIMIT 1 " +
-                              "FOR UPDATE SKIP LOCKED";
+                              "FOR UPDATE" + (supportsSkipLocked ? " SKIP LOCKED" : "");
             String updateSql = "UPDATE justrtp_teleports SET status = ?, updated_at = NOW(), processing_server = ? WHERE player_uuid = ? AND status = ?";
 
             Connection conn = null;
@@ -781,7 +816,8 @@ public class DatabaseManager {
                 conn.setTransactionIsolation(Connection.TRANSACTION_SERIALIZABLE);
                 
                 try (PreparedStatement selectPstmt = conn.prepareStatement(selectSql)) {
-                    selectPstmt.setQueryTimeout(10); 
+                    int queryTimeout = supportsSkipLocked ? 10 : 3;
+                    selectPstmt.setQueryTimeout(queryTimeout); 
                     selectPstmt.setFetchSize(1); 
                     selectPstmt.setString(1, serverName);
                     selectPstmt.setString(2, RequestStatus.PENDING.name());

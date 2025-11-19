@@ -1,5 +1,7 @@
 package eu.kotori.justRTP.handlers.hooks;
 import eu.kotori.justRTP.JustRTP;
+import eu.kotori.justRTP.handlers.hooks.impl.KingdomXHook;
+import eu.kotori.justRTP.handlers.hooks.impl.TownsAndNationsHook;
 import eu.kotori.justRTP.handlers.hooks.impl.WorldGuardHook;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -14,9 +16,24 @@ public class HookManager {
         detectAndEnableHooks();
     }
     private void detectAndEnableHooks() {
-        if (plugin.getConfig().getBoolean("settings.respect_regions") && isPluginEnabled("WorldGuard")) {
+        if (!plugin.getConfig().getBoolean("settings.respect_regions", true)) {
+            plugin.getLogger().info("Region respect is disabled in config.");
+            return;
+        }
+        
+        if (isPluginEnabled("WorldGuard")) {
             activeHooks.add(new WorldGuardHook());
             plugin.getLogger().info("Successfully hooked into WorldGuard.");
+        }
+        
+        if (isPluginEnabled("KingdomsX") || isPluginEnabled("Kingdoms")) {
+            activeHooks.add(new KingdomXHook());
+            plugin.getLogger().info("Successfully hooked into KingdomsX.");
+        }
+        
+        if (isPluginEnabled("TownsAndNations")) {
+            activeHooks.add(new TownsAndNationsHook());
+            plugin.getLogger().info("Successfully hooked into Towns and Nations.");
         }
     }
     public boolean isLocationSafe(Location location) {

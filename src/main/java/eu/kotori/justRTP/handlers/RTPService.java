@@ -1,6 +1,7 @@
 package eu.kotori.justRTP.handlers;
 
 import eu.kotori.justRTP.JustRTP;
+import eu.kotori.justRTP.events.PlayerPostRTPEvent;
 import eu.kotori.justRTP.handlers.hooks.HookManager;
 import eu.kotori.justRTP.managers.ConfigManager;
 import eu.kotori.justRTP.utils.SafetyValidator;
@@ -13,6 +14,7 @@ import org.bukkit.entity.Player;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.Collectors;
 
@@ -39,7 +41,7 @@ public class RTPService {
     private final ConfigManager config;
     private final HookManager hookManager;
     private EnumSet<Material> blacklistedBlocks;
-    private final Map<String, WorldType> worldTypes = new HashMap<>();
+    private final Map<String, WorldType> worldTypes = new ConcurrentHashMap<>();
     private final Set<String> borderWarningShown = new HashSet<>(); 
 
     private String worldMode;
@@ -69,9 +71,43 @@ public class RTPService {
         this.biomeList = plugin.getConfig().getStringList("rtp_settings.biomes.list").stream()
                 .map(str -> {
                     try {
-                        return Biome.valueOf(str.toUpperCase());
-                    } catch (IllegalArgumentException e) {
-                        plugin.getLogger().warning("Invalid biome name in config.yml: " + str);
+                        String biomeName = str.toUpperCase();
+                        Biome biome = null;
+                        
+                        try {
+                            biome = org.bukkit.Registry.BIOME.get(org.bukkit.NamespacedKey.minecraft(biomeName.toLowerCase()));
+                        } catch (Exception ignored) {
+                        }
+                        
+                        if (biome == null) {
+                            try {
+                                Class<Biome> biomeClass = Biome.class;
+                                java.lang.reflect.Method valuesMethod = biomeClass.getMethod("values");
+                                Object result = valuesMethod.invoke(null);
+                                if (result instanceof Biome[]) {
+                                    Biome[] allBiomes = (Biome[]) result;
+                                    java.lang.reflect.Method nameMethod = biomeClass.getMethod("name");
+                                    for (int i = 0; i < allBiomes.length; i++) {
+                                        Biome b = allBiomes[i];
+                                        if (b != null) {
+                                            String enumName = (String) nameMethod.invoke(b);
+                                            if (enumName != null && enumName.equalsIgnoreCase(biomeName)) {
+                                                biome = b;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                            } catch (Exception ignored) {
+                            }
+                        }
+                        
+                        if (biome == null) {
+                            plugin.getLogger().warning("Invalid biome name in config.yml: " + str);
+                        }
+                        return biome;
+                    } catch (Exception e) {
+                        plugin.getLogger().warning("Error loading biome: " + str + " - " + e.getMessage());
                         return null;
                     }
                 })
@@ -85,15 +121,39 @@ public class RTPService {
     }
 
     public void teleportPlayer(Player player, Location location) {
+        teleportPlayer(player, location, null, null, 0.0, false, null);
+    }
+    
+    public void teleportPlayer(Player player, Location location, Integer minRadius, Integer maxRadius, 
+                              double cost, boolean isCrossServer, String targetServer) {
         if (!player.isOnline()) return;
 
+        Location fromLocation = player.getLocation().clone();
+        World targetWorld = location.getWorld();
+
         plugin.getFoliaScheduler().runAtEntity(player, () -> {
+            player.setVelocity(new org.bukkit.util.Vector(0, 0, 0));
             player.setFallDistance(0f);
+            
             PaperLib.teleportAsync(player, location).thenAccept(success -> {
                 if (success) {
                     plugin.getFoliaScheduler().runAtEntity(player, () -> {
+                        player.setVelocity(new org.bukkit.util.Vector(0, 0, 0));
                         player.setFallDistance(0f);
                         plugin.getEffectsManager().applyPostTeleportEffects(player);
+                        
+                        PlayerPostRTPEvent postEvent = new PlayerPostRTPEvent(
+                            player,
+                            fromLocation,
+                            location,
+                            targetWorld,
+                            minRadius,
+                            maxRadius,
+                            cost,
+                            isCrossServer,
+                            targetServer
+                        );
+                        Bukkit.getPluginManager().callEvent(postEvent);
                     });
                 }
             });
@@ -109,7 +169,13 @@ public class RTPService {
     public CompletableFuture<Optional<Location>> findSafeLocation(Player player, World world, int attempts, Optional<Integer> minRadius, Optional<Integer> maxRadius) {
         boolean generateChunks = plugin.getConfigManager().shouldGenerateChunks(world);
         int finalAttempts = (attempts > 0) ? attempts : getDimensionAttempts(world);
-        return findLocationAsync(player, world, finalAttempts, minRadius, maxRadius, generateChunks);
+        return findLocationAsync(player, world, finalAttempts, minRadius, maxRadius, generateChunks, 0, 0, false);
+    }
+
+    public CompletableFuture<Optional<Location>> findSafeLocation(Player player, World world, int attempts, Optional<Integer> minRadius, Optional<Integer> maxRadius, int centerX, int centerZ) {
+        boolean generateChunks = plugin.getConfigManager().shouldGenerateChunks(world);
+        int finalAttempts = (attempts > 0) ? attempts : getDimensionAttempts(world);
+        return findLocationAsync(player, world, finalAttempts, minRadius, maxRadius, generateChunks, centerX, centerZ, true);
     }
     
     private int getDimensionAttempts(World world) {
@@ -125,10 +191,19 @@ public class RTPService {
 
     private CompletableFuture<Optional<Location>> findLocationAsync(Player player, World world, int attemptsLeft, Optional<Integer> minRadius, Optional<Integer> maxRadius, boolean generateChunks) {
         SearchSummary summary = new SearchSummary();
-        return findLocationRecursive(player, world, attemptsLeft, minRadius, maxRadius, generateChunks, summary);
+        return findLocationRecursive(player, world, attemptsLeft, minRadius, maxRadius, generateChunks, summary, 0, 0, false);
+    }
+
+    private CompletableFuture<Optional<Location>> findLocationAsync(Player player, World world, int attemptsLeft, Optional<Integer> minRadius, Optional<Integer> maxRadius, boolean generateChunks, int centerX, int centerZ, boolean useCustomCenter) {
+        SearchSummary summary = new SearchSummary();
+        return findLocationRecursive(player, world, attemptsLeft, minRadius, maxRadius, generateChunks, summary, centerX, centerZ, useCustomCenter);
     }
 
     private CompletableFuture<Optional<Location>> findLocationRecursive(Player player, World world, int attemptsLeft, Optional<Integer> minRadius, Optional<Integer> maxRadius, boolean generateChunks, SearchSummary summary) {
+        return findLocationRecursive(player, world, attemptsLeft, minRadius, maxRadius, generateChunks, summary, 0, 0, false);
+    }
+
+    private CompletableFuture<Optional<Location>> findLocationRecursive(Player player, World world, int attemptsLeft, Optional<Integer> minRadius, Optional<Integer> maxRadius, boolean generateChunks, SearchSummary summary, int customCenterX, int customCenterZ, boolean useCustomCenter) {
         if (attemptsLeft <= 0) {
             int totalAttempts = getDimensionAttempts(world);
             String worldType = world.getEnvironment().name();
@@ -158,8 +233,15 @@ public class RTPService {
         final double finalMaxRadius = Math.max(initialMinR, initialMaxR);
 
         ConfigurationSection worldConfig = plugin.getConfig().getConfigurationSection("custom_worlds." + world.getName());
-        int cX = (worldConfig != null) ? worldConfig.getInt("center_x", 0) : (int) borderCenter.getX();
-        int cZ = (worldConfig != null) ? worldConfig.getInt("center_z", 0) : (int) borderCenter.getZ();
+        int cX, cZ;
+        if (useCustomCenter) {
+            cX = customCenterX;
+            cZ = customCenterZ;
+            plugin.debug("Using custom center coordinates: X=" + cX + ", Z=" + cZ);
+        } else {
+            cX = (worldConfig != null) ? worldConfig.getInt("center_x", 0) : (int) borderCenter.getX();
+            cZ = (worldConfig != null) ? worldConfig.getInt("center_z", 0) : (int) borderCenter.getZ();
+        }
 
         double angle = ThreadLocalRandom.current().nextDouble(2 * Math.PI);
         double radius = Math.sqrt(ThreadLocalRandom.current().nextDouble()) * (finalMaxRadius - finalMinRadius) + finalMinRadius;
@@ -178,41 +260,39 @@ public class RTPService {
             plugin.getLogger().severe("║  This would cause chunk loading to freeze the server!     ║");
             plugin.getLogger().severe("║  Retrying with safer coordinates...                       ║");
             plugin.getLogger().severe("╚════════════════════════════════════════════════════════════╝");
-            return findLocationRecursive(player, world, attemptsLeft - 1, minRadius, maxRadius, generateChunks, summary);
+            return findLocationRecursive(player, world, attemptsLeft - 1, minRadius, maxRadius, generateChunks, summary, customCenterX, customCenterZ, useCustomCenter);
         }
 
         return PaperLib.getChunkAtAsync(world, x >> 4, z >> 4, generateChunks).thenCompose(chunk -> {
             if (chunk == null) {
-                plugin.getLogger().warning("Failed to load chunk at " + (x >> 4) + ", " + (z >> 4) + " in " + world.getName() + " (generateChunks=" + generateChunks + ")");
+                plugin.debug("Failed to load chunk at " + (x >> 4) + ", " + (z >> 4) + " in " + world.getName() + " (generateChunks=" + generateChunks + ")");
                 summary.increment(FailureReason.UNKNOWN);
                 
                 int totalAttempts = getDimensionAttempts(world);
                 int attemptsMade = totalAttempts - attemptsLeft + 1;
                 if (attemptsMade % 10 == 0) {
-                    plugin.getLogger().warning("Chunk loading failures in " + world.getName() + " after " + attemptsMade + " attempts. Check world configuration!");
+                    plugin.debug("Chunk loading failures in " + world.getName() + " after " + attemptsMade + " attempts. Retrying...");
                 }
                 
-                return findLocationRecursive(player, world, attemptsLeft - 1, minRadius, maxRadius, generateChunks, summary);
+                return findLocationRecursive(player, world, attemptsLeft - 1, minRadius, maxRadius, generateChunks, summary, customCenterX, customCenterZ, useCustomCenter);
             }
             
-            WorldType type = worldTypes.get(world.getName());
-            if (type == null) {
+            final WorldType type;
+            WorldType configuredType = worldTypes.get(world.getName());
+            if (configuredType == null) {
                 if (world.getEnvironment() == World.Environment.NETHER) {
                     type = WorldType.NETHER;
-                    plugin.getLogger().info("[NETHER DETECTION] Auto-detected NETHER environment for world '" + world.getName() + "' - Y < 127 enforcement ACTIVE");
                 } else if (world.getEnvironment() == World.Environment.THE_END) {
                     type = WorldType.THE_END;
-                    plugin.debug("Auto-detected THE_END environment for " + world.getName());
                 } else {
                     type = WorldType.NORMAL;
                 }
             } else {
-                plugin.getLogger().info("[WORLD TYPE] Using configured WorldType." + type + " for world '" + world.getName() + "'");
+                type = configuredType;
             }
             
             if (world.getEnvironment() == World.Environment.NETHER && type != WorldType.NETHER) {
                 plugin.getLogger().warning("[NETHER OVERRIDE] World '" + world.getName() + "' has NETHER environment but type was " + type + " - FORCING to NETHER for safety!");
-                type = WorldType.NETHER;
             }
             
             Optional<Location> safeSpot;
@@ -230,62 +310,60 @@ public class RTPService {
 
             if (safeSpot.isPresent()) {
                 Location loc = safeSpot.get();
-                
-                if (!SafetyValidator.isLocationAbsolutelySafe(loc)) {
-                    String reason = SafetyValidator.getUnsafeReason(loc);
-                    plugin.getLogger().severe("╔════════════════════════════════════════════════════════════╗");
-                    plugin.getLogger().severe("║  SAFETY VALIDATOR REJECTED LOCATION!                      ║");
-                    plugin.getLogger().severe("║  World: " + world.getName() + " (" + world.getEnvironment() + ")    ║");
-                    plugin.getLogger().severe("║  Location: " + loc.getBlockX() + "," + loc.getBlockY() + "," + loc.getBlockZ() + "  ║");
-                    plugin.getLogger().severe("║  Reason: " + reason + "                                   ║");
-                    plugin.getLogger().severe("║  Retrying with different location...                      ║");
-                    plugin.getLogger().severe("╚════════════════════════════════════════════════════════════╝");
-                    summary.increment(FailureReason.UNKNOWN);
-                    return findLocationRecursive(player, world, attemptsLeft - 1, minRadius, maxRadius, generateChunks, summary);
-                }
-                
-                boolean isNetherWorld = (type == WorldType.NETHER) || (world.getEnvironment() == World.Environment.NETHER);
-                
-                if (isNetherWorld) {
-                    double y = loc.getY();
-                    if (y >= 126.0) {
-                        plugin.getLogger().severe("╔════════════════════════════════════════════════════════════╗");
-                        plugin.getLogger().severe("║  CRITICAL NETHER ROOF SPAWN PREVENTED!                    ║");
-                        plugin.getLogger().severe("║  Location rejected: Y=" + y + " >= 126                    ║");
-                        plugin.getLogger().severe("║  World: " + world.getName() + " (Type: " + type + ", Env: " + world.getEnvironment() + ") ║");
-                        plugin.getLogger().severe("║  Head would be at: Y=" + (y + 1) + " (NETHER CEILING!)           ║");
-                        plugin.getLogger().severe("║  Continuing search for safe location...                   ║");
-                        plugin.getLogger().severe("╚════════════════════════════════════════════════════════════╝");
+
+                return SafetyValidator.isLocationAbsolutelySafeAsync(loc).thenCompose(safe -> {
+                    if (!safe) {
+                        String reason = SafetyValidator.getUnsafeReason(loc);
+                        plugin.debug("Safety validator rejected location in " + world.getName() + " at " + 
+                                    loc.getBlockX() + "," + loc.getBlockY() + "," + loc.getBlockZ() + 
+                                    " - Reason: " + reason + " (retrying...)");
                         summary.increment(FailureReason.UNKNOWN);
-                        return findLocationRecursive(player, world, attemptsLeft - 1, minRadius, maxRadius, generateChunks, summary);
+                        return findLocationRecursive(player, world, attemptsLeft - 1, minRadius, maxRadius, generateChunks, summary, customCenterX, customCenterZ, useCustomCenter);
                     }
-                    plugin.getLogger().info("[NETHER SAFE] ✓ Nether location verified safe: Y=" + y + " (head at Y=" + (y + 1) + ") in " + world.getName());
-                }
-                
-                if (world.getEnvironment() == World.Environment.THE_END) {
-                    double y = loc.getY();
-                    if (y < 10 || y > 120) {
-                        plugin.getLogger().warning("[END SAFETY] Rejected Y=" + y + " (out of safe range 10-120)");
-                        summary.increment(FailureReason.UNKNOWN);
-                        return findLocationRecursive(player, world, attemptsLeft - 1, minRadius, maxRadius, generateChunks, summary);
+
+                    boolean isNetherWorld = (type == WorldType.NETHER) || (world.getEnvironment() == World.Environment.NETHER);
+
+                    if (isNetherWorld) {
+                        double y = loc.getY();
+                        if (y >= 126.0) {
+                            plugin.getLogger().severe("╔════════════════════════════════════════════════════════════╗");
+                            plugin.getLogger().severe("║  CRITICAL NETHER ROOF SPAWN PREVENTED!                    ║");
+                            plugin.getLogger().severe("║  Location rejected: Y=" + y + " >= 126                    ║");
+                            plugin.getLogger().severe("║  World: " + world.getName() + " (Type: " + type + ", Env: " + world.getEnvironment() + ") ║");
+                            plugin.getLogger().severe("║  Head would be at: Y=" + (y + 1) + " (NETHER CEILING!)           ║");
+                            plugin.getLogger().severe("║  Continuing search for safe location...                   ║");
+                            plugin.getLogger().severe("╚════════════════════════════════════════════════════════════╝");
+                            summary.increment(FailureReason.UNKNOWN);
+                            return findLocationRecursive(player, world, attemptsLeft - 1, minRadius, maxRadius, generateChunks, summary, customCenterX, customCenterZ, useCustomCenter);
+                        }
+                        plugin.debug("[NETHER SAFE] ✓ Nether location verified safe: Y=" + y + " (head at Y=" + (y + 1) + ") in " + world.getName());
                     }
-                    plugin.debug("[END SAFE] ✓ End location verified safe: Y=" + y + " in " + world.getName());
-                }
-                
-                if (world.getEnvironment() == World.Environment.NORMAL) {
-                    double y = loc.getY();
-                    if (y >= 127 || y < world.getMinHeight() + 5) {
-                        plugin.getLogger().warning("[OVERWORLD SAFETY] Rejected Y=" + y + " (invalid height)");
-                        summary.increment(FailureReason.UNKNOWN);
-                        return findLocationRecursive(player, world, attemptsLeft - 1, minRadius, maxRadius, generateChunks, summary);
+
+                    if (world.getEnvironment() == World.Environment.THE_END) {
+                        double y = loc.getY();
+                        if (y < 10 || y > 120) {
+                            plugin.debug("[END SAFETY] Rejected Y=" + y + " (out of safe range 10-120)");
+                            summary.increment(FailureReason.UNKNOWN);
+                            return findLocationRecursive(player, world, attemptsLeft - 1, minRadius, maxRadius, generateChunks, summary, customCenterX, customCenterZ, useCustomCenter);
+                        }
+                        plugin.debug("[END SAFE] ✓ End location verified safe: Y=" + y + " in " + world.getName());
                     }
-                    plugin.debug("[OVERWORLD SAFE] ✓ Overworld location verified safe: Y=" + y + " in " + world.getName());
-                }
-                
-                plugin.debug("Success: Found safe location at " + loc.getBlockX() + "," + loc.getBlockY() + "," + loc.getBlockZ() + " after " + (getDimensionAttempts(world) - attemptsLeft + 1) + " attempts.");
-                return CompletableFuture.completedFuture(safeSpot);
+
+                    if (world.getEnvironment() == World.Environment.NORMAL) {
+                        double y = loc.getY();
+                        if (y >= 127 || y < world.getMinHeight() + 5) {
+                            plugin.debug("[OVERWORLD SAFETY] Rejected Y=" + y + " (invalid height)");
+                            summary.increment(FailureReason.UNKNOWN);
+                            return findLocationRecursive(player, world, attemptsLeft - 1, minRadius, maxRadius, generateChunks, summary, customCenterX, customCenterZ, useCustomCenter);
+                        }
+                        plugin.debug("[OVERWORLD SAFE] ✓ Overworld location verified safe: Y=" + y + " in " + world.getName());
+                    }
+
+                    plugin.debug("Success: Found safe location at " + loc.getBlockX() + "," + loc.getBlockY() + "," + loc.getBlockZ() + " after " + (getDimensionAttempts(world) - attemptsLeft + 1) + " attempts.");
+                    return CompletableFuture.completedFuture(safeSpot);
+                });
             }
-            return findLocationRecursive(player, world, attemptsLeft - 1, minRadius, maxRadius, generateChunks, summary);
+            return findLocationRecursive(player, world, attemptsLeft - 1, minRadius, maxRadius, generateChunks, summary, customCenterX, customCenterZ, useCustomCenter);
         });
     }
 
@@ -306,8 +384,8 @@ public class RTPService {
         }
         
         if (groundY >= 127) {
-            plugin.getLogger().warning("[SAFETY] findSafeInNormal() found groundY=" + groundY + " >= 127 in " + 
-                                     chunk.getWorld().getName() + " - rejecting for safety");
+            plugin.debug("[SAFETY] findSafeInNormal() found groundY=" + groundY + " >= 127 in " + 
+                        chunk.getWorld().getName() + " - rejecting for safety");
             summary.increment(FailureReason.UNKNOWN);
             return Optional.empty();
         }
@@ -333,7 +411,7 @@ public class RTPService {
     private Optional<Location> findSafeInNether(Chunk chunk, int x, int z, SearchSummary summary) {
         
         String worldName = chunk.getWorld().getName();
-        plugin.getLogger().info("[NETHER SEARCH] Starting nether location search in '" + worldName + "' at X=" + x + " Z=" + z);
+        plugin.debug("[NETHER SEARCH] Starting nether location search in '" + worldName + "' at X=" + x + " Z=" + z);
         
         int minHeight = Math.max(chunk.getWorld().getMinHeight(), 5); 
         int maxSearchY = 120; 
@@ -432,7 +510,7 @@ public class RTPService {
                     
                     double finalY = safeLocation.getY();
                     if (finalY < 10.0 || finalY > 120.0) {
-                        plugin.getLogger().warning("[END SAFETY] Generated unsafe Y=" + finalY + " - rejecting");
+                        plugin.debug("[END SAFETY] Generated unsafe Y=" + finalY + " - rejecting");
                         continue;
                     }
                     

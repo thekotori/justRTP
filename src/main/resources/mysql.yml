@@ -5,6 +5,13 @@
 # It allows different servers in your BungeeCord/Velocity network to communicate.
 # This file must be configured identically on ALL Spigot/Paper servers where JustRTP is installed.
 # ----------------------------------------------------------------
+# SUPPORTED DATABASE VERSIONS:
+#   MySQL 5.7+ (MySQL 8.0+ recommended for optimal performance)
+#   MariaDB 10.3+ (MariaDB 10.6+ recommended for optimal performance)
+#
+# Note: Older versions (MySQL 5.7, MariaDB 10.3-10.5) are supported but will use
+#       fallback locking mechanisms instead of SKIP LOCKED for better compatibility.
+# ----------------------------------------------------------------
 # CONFIG VERSION - DO NOT CHANGE THIS
 config-version: 5
 # ----------------------------------------------------------------
@@ -37,4 +44,4 @@ pool-settings:
   # How long (in milliseconds) a connection can be idle before being closed.
   idle-timeout: 600000
   # The maximum lifetime of a connection in the pool (in milliseconds).
-  max-lifetime: 1800000
+  max-lifetime: 800000

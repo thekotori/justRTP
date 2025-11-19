@@ -2,7 +2,11 @@
 # JustRTP Message Configuration
 # ----------------------------------------------------------------
 # CONFIG VERSION - DO NOT CHANGE THIS
-config-version: 14
+config-version: 15
+# ----------------------------------------------------------------
+# NOTE: The <time> placeholder is automatically formatted in human-readable format
+#       Examples: "5m 38s", "1h 2m", "30s"
+#       You don't need to include "seconds" in your messages anymore!
 # ----------------------------------------------------------------
 
 prefix: "<gray>[<gradient:#20B2AA:#7FFFD4>JustRTP</gradient>]</gray>"
@@ -48,9 +52,9 @@ proxy:
   setup_tip_zone_format: "<gradient:#20B2AA:#7FFFD4><b>RTP Zone Setup Guide:</b></gradient><newline><gray>|- Step 1: <white>/rtpzone setup <gold><zone_id><newline><gray>|- Step 2: <white>Select corners with wand (left/right click)<newline><gray>|- Step 3: <white>Specify target: <gold>lobby2<white>:<aqua>world_nether<newline><gray>|- Step 4: <white>Set radius, interval, and view distance<newline><gray>|- Tip: Target can be local world <gray>(<aqua>world_nether<gray>) <gray>or cross-server <gray>(<gold>server<white>:<aqua>world<gray>)"
 
 teleport:
-  delay: "%prefix% <gray>Teleporting in <time> seconds... Don't move!</gray>"
+  delay: "%prefix% <gray>Teleporting in <time>... Don't move!</gray>"
   cancelled: "%prefix% <red>Teleport cancelled.</red>"
-  cooldown: "%prefix% <red>You must wait <time> seconds before teleporting again.</red>"
+  cooldown: "%prefix% <red>You must wait <time> before teleporting again.</red>"
   queued: "%prefix% <gray>Your teleport request has been queued... Please wait.</gray>"
   start_self: "%prefix% <gray>Searching for a safe location for you...</gray>"
   start_other: "%prefix% <gray>Searching for a safe location for <player>...</gray>"
@@ -156,3 +160,25 @@ zone_sync:
   status_mysql: "<dark_gray>  <gray>MySQL:</gray> <status>"
   status_sync_state: "<dark_gray>  <gray>Sync State:</gray> <state>"
   status_footer: "%prefix% <gold>========================</gold>"
+
+# --- Spawn World Redirect Messages ---
+spawn_redirect:
+  redirected: "%prefix% <gray>Spawn world detected! Redirecting to <aqua><world></aqua>...</gray>"
+  target_not_found: "%prefix% <red>Target world '<world>' for spawn redirect not found. Using spawn world.</red>"
+
+# --- Custom Location Messages ---
+custom_locations:
+  usage: "%prefix% <red>Usage: /rtp location <location_name></red>"
+  feature_disabled: "%prefix% <red>Custom locations feature is disabled.</red>"
+  not_found: "%prefix% <red>Location '<location>' does not exist.</red>"
+  no_permission: "%prefix% <red>You do not have permission to access location '<location>'.</red>"
+  searching: "%prefix% <gray>Searching for a safe location in <gold><location></gold>...</gray>"
+  success: "%prefix% <green>Teleported to location <gold><location></gold>!</green>"
+  world_not_found: "%prefix% <red>World '<world>' for location '<location>' is not loaded.</red>"
+
+# --- Jump RTP Messages ---
+jump_rtp:
+  activated: "%prefix% <gray>Jump RTP activated! Searching for location...</gray>"
+  cooldown: "%prefix% <red>Jump RTP is on cooldown. Wait <time> before jumping again.</red>"
+  disabled_world: "%prefix% <red>Jump RTP is not enabled in this world.</red>"
+  feature_disabled: "%prefix% <red>Jump RTP feature is disabled.</red>"

@@ -76,17 +76,79 @@ public class LocationCacheManager {
         if (!cacheFile.exists()) {
             plugin.saveResource("cache.yml", false);
         }
-        cacheConfig = YamlConfiguration.loadConfiguration(cacheFile);
-        ConfigurationSection cacheSection = cacheConfig.getConfigurationSection("cache");
-        if (cacheSection != null) {
-            for (String worldName : cacheSection.getKeys(false)) {
+        
+        cacheConfig = new YamlConfiguration();
+        
+        try {
+            String yamlContent = new String(java.nio.file.Files.readAllBytes(cacheFile.toPath()));
+            
+            org.yaml.snakeyaml.Yaml yaml = new org.yaml.snakeyaml.Yaml();
+            @SuppressWarnings("unchecked")
+            Map<String, Object> data = yaml.load(yamlContent);
+            
+            if (data != null && data.containsKey("cache")) {
                 @SuppressWarnings("unchecked")
-                List<Location> locations = (List<Location>) cacheSection.getList(worldName, new ArrayList<>());
-                locationCache.put(worldName, new ConcurrentLinkedQueue<>(locations));
+                Map<String, Object> cacheSection = (Map<String, Object>) data.get("cache");
+                
+                if (cacheSection != null) {
+                    for (Map.Entry<String, Object> entry : cacheSection.entrySet()) {
+                        String worldName = entry.getKey();
+                        
+                        World world = plugin.getServer().getWorld(worldName);
+                        if (world == null) {
+                            plugin.debug("Skipping cache loading for world '" + worldName + "' - world not loaded yet.");
+                            continue;
+                        }
+                        
+                        Object value = entry.getValue();
+                        if (!(value instanceof List)) {
+                            continue;
+                        }
+                        
+                        @SuppressWarnings("unchecked")
+                        List<Object> rawLocations = (List<Object>) value;
+                        
+                        if (rawLocations.isEmpty()) {
+                            continue;
+                        }
+                        
+                        List<Location> validLocations = new ArrayList<>();
+                        for (Object rawLoc : rawLocations) {
+                            try {
+                                if (rawLoc instanceof Map) {
+                                    @SuppressWarnings("unchecked")
+                                    Map<String, Object> locMap = (Map<String, Object>) rawLoc;
+                                    String locWorldName = (String) locMap.get("world");
+                                    
+                                    if (locWorldName != null && plugin.getServer().getWorld(locWorldName) != null) {
+                                        try {
+                                            Location loc = Location.deserialize(locMap);
+                                            if (loc.getWorld() != null) {
+                                                validLocations.add(loc);
+                                            }
+                                        } catch (IllegalArgumentException e) {
+                                            plugin.debug("Skipped invalid location for world '" + locWorldName + "': " + e.getMessage());
+                                        }
+                                    }
+                                }
+                            } catch (Exception e) {
+                                plugin.debug("Failed to process location entry: " + e.getMessage());
+                            }
+                        }
+                        
+                        if (!validLocations.isEmpty()) {
+                            locationCache.put(worldName, new ConcurrentLinkedQueue<>(validLocations));
+                            plugin.debug("Loaded " + validLocations.size() + " cached locations for world: " + worldName);
+                        }
+                    }
+                }
             }
+        } catch (Exception e) {
+            plugin.getLogger().log(Level.WARNING, "Could not load cache.yml - cache will start empty", e);
+            return;
         }
 
-        cacheConfig.set("cache", null);
+        cacheConfig = new YamlConfiguration();
         try {
             cacheConfig.save(cacheFile);
         } catch (IOException e) {
@@ -186,5 +248,14 @@ public class LocationCacheManager {
             return Optional.empty();
         }
         return Optional.ofNullable(locationCache.getOrDefault(world.getName(), new ConcurrentLinkedQueue<>()).poll());
+    }
+    
+    public int getTotalCachedLocations() {
+        if (!cacheEnabled || locationCache == null) {
+            return 0;
+        }
+        return locationCache.values().stream()
+            .mapToInt(Queue::size)
+            .sum();
     }
 }

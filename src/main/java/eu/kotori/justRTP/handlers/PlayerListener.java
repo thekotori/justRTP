@@ -288,21 +288,14 @@ public class PlayerListener implements Listener {
                 plugin.debug("Player " + player.getName() + " disconnected with request status: " + status);
                 
                 if ("IN_TRANSFER".equals(status)) {
-                    plugin.getLogger().info("Player " + player.getName() + " disconnected during transfer, marking request as FAILED");
-                    plugin.getDatabaseManager().failTeleportRequest(player.getUniqueId())
-                            .thenRun(() -> {
-                                plugin.debug("Successfully marked disconnected player's request as FAILED");
-                            })
-                            .exceptionally(throwable -> {
-                                plugin.getLogger().severe("Error handling disconnect for " + player.getName() + ": " + throwable.getMessage());
-                                return null;
-                            });
+                    plugin.debug("Player " + player.getName() + " disconnected during IN_TRANSFER (expected - being sent to target server)");
+                    plugin.debug("Transfer will be confirmed when player joins target server, or marked FAILED by cleanup if stuck >3min");
                     
                 } else if ("PENDING".equals(status) || "PROCESSING".equals(status)) {
                     plugin.debug("Player disconnected with " + status + " request, cleanup will handle it");
                     
                 } else if ("COMPLETE".equals(status)) {
-                    plugin.getLogger().info("Player " + player.getName() + " disconnected before joining target server, marking as FAILED");
+                    plugin.debug("Player " + player.getName() + " disconnected with COMPLETE status before transfer started, marking as FAILED");
                     plugin.getDatabaseManager().failTeleportRequest(player.getUniqueId());
                 }
             });
